@@ -88,9 +88,6 @@ function Divider({
     <DesktopView
       {...responder.panHandlers}
       testID={`split-divider-${column.id}`}
-      // Keep the divider's layout width unchanged while making mouse/touch
-      // targeting easier near the boundary.
-      hitSlop={{ left: 8, right: 8 }}
       onLayout={(event) => onWidthChange(event.nativeEvent.layout.width)}
       accessible
       focusable
@@ -126,6 +123,11 @@ function Divider({
       ]}
     >
       {(column.renderDivider ?? renderContent)?.(context)}
+      <View
+        {...responder.panHandlers}
+        accessible={false}
+        style={styles.dividerHitArea}
+      />
     </DesktopView>
   );
 }
@@ -329,4 +331,12 @@ export function createSplitNavigator() {
 const styles = StyleSheet.create({
   split: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
   row: { flex: 1, minWidth: 0, flexDirection: 'row', overflow: 'hidden' },
+  dividerHitArea: {
+    position: 'absolute',
+    top: 0,
+    right: -8,
+    bottom: 0,
+    left: -8,
+    zIndex: 1,
+  },
 });
