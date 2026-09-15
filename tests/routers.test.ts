@@ -273,3 +273,63 @@ it('resizes only the adjacent visible Split columns and clamps against both cons
     )!.widths,
   ).toEqual({ left: 400, middle: 300, right: 300 });
 });
+
+it('retains a collapsed middle column through responsive layouts and pins both adjacent resize boundaries', () => {
+  const config = {
+    key: 'root',
+    routes: [
+      { name: 'left', defaultWidth: 240, minWidth: 180 },
+      { name: 'menu', defaultWidth: 300, minWidth: 200 },
+      { name: 'right', defaultWidth: 460, minWidth: 320 },
+    ],
+  };
+  let state = SplitRouter.getInitialState(config);
+  state = SplitRouter.reduce(
+    state,
+    {
+      type: 'layout',
+      payload: {
+        ids: ['left', 'menu', 'right'],
+        availableWidth: 1000,
+        collapsedWidths: { menu: 56 },
+      },
+    },
+    config,
+  )!;
+  expect(state.widths).toEqual({ left: 240, menu: 56, right: 704 });
+  for (const type of ['resize', 'resizeBoundary'] as const) {
+    expect(
+      SplitRouter.reduce(
+        state,
+        { type, payload: { id: 'menu', width: 400 } },
+        config,
+      ),
+    ).toBe(state);
+  }
+  expect(
+    SplitRouter.reduce(
+      state,
+      { type: 'resizeBoundary', payload: { id: 'left', width: 400 } },
+      config,
+    ),
+  ).toBe(state);
+  state = SplitRouter.reduce(
+    state,
+    { type: 'layout', payload: { ids: ['right'], availableWidth: 600 } },
+    config,
+  )!;
+  expect(state.widths.menu).toBe(56);
+  state = SplitRouter.reduce(
+    state,
+    {
+      type: 'layout',
+      payload: {
+        ids: ['left', 'menu', 'right'],
+        availableWidth: 1000,
+        collapsedWidths: { menu: null },
+      },
+    },
+    config,
+  )!;
+  expect(state.widths).toEqual({ left: 240, menu: 300, right: 460 });
+});

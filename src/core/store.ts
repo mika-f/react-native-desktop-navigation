@@ -120,6 +120,24 @@ export function restoreNavigationState(
         ))
     )
       throw new Error('Invalid split state.');
+    if (s.type === 'split' && s.collapsedColumns !== undefined) {
+      if (
+        !s.collapsedColumns ||
+        typeof s.collapsedColumns !== 'object' ||
+        Array.isArray(s.collapsedColumns) ||
+        Object.entries(s.collapsedColumns).some(
+          ([name, column]) =>
+            !s.routes.some((r) => r.name === name) ||
+            !column ||
+            !Number.isFinite(column.width) ||
+            column.width < 0 ||
+            !Number.isFinite(column.expandedWidth) ||
+            column.expandedWidth < 0 ||
+            s.widths[name] !== column.width,
+        )
+      )
+        throw new Error('Invalid collapsed split state.');
+    }
     const visited = new Set([id]);
     let current = node;
     while (current.parentId) {

@@ -19,6 +19,7 @@ import {
   useFocusEffect,
   useNavigationState,
   serializeNavigationState,
+  restoreNavigationState,
   macosAdapter,
   windowsAdapter,
   type StackScreenProps,
@@ -1117,3 +1118,204 @@ it('reclaims hidden divider space and refits a responsive Split without losing a
   );
   expect([width('left'), width('right')]).toEqual([200, 600]);
 });
+
+it('moves Split boundaries on Sidebar collapse and restores the resized width after snapshot restore', () => {
+  const Split = createSplitNavigator();
+  const Sidebar = createSidebarNavigator<{ Home: undefined }>();
+  const nav = createNavigationRef();
+  const mounted = vi.fn();
+  const resize = vi.fn();
+  function Menu() {
+    React.useEffect(mounted, []);
+    return (
+      <Sidebar.Navigator width="fill" collapsedWidth={64}>
+        <Sidebar.Screen name="Home" component={() => null} />
+      </Sidebar.Navigator>
+    );
+  }
+  const tree = (initialState?: string) => (
+    <React.StrictMode>
+      <NavigationContainer
+        ref={nav}
+        initialState={
+          initialState ? restoreNavigationState(initialState) : undefined
+        }
+      >
+        <Split.Navigator onColumnResize={resize}>
+          <Split.Column
+            id="menu"
+            component={Menu}
+            defaultWidth={240}
+            minWidth={180}
+          />
+          <Split.Column id="content" component={() => null} minWidth={320} />
+        </Split.Navigator>
+      </NavigationContainer>
+    </React.StrictMode>
+  );
+  const split = () =>
+    native('View').find((n) => n.props.testID === 'split-layout')!;
+  const divider = () =>
+    native('View').find((n) => n.props.testID === 'split-divider-menu')!;
+  const widths = () =>
+    ['menu', 'content'].map(
+      (id) =>
+        StyleSheet.flatten(
+          native('View').find((n) => n.props.testID === `split-column-${id}`)!
+            .props.style,
+        ).width,
+    );
+  const layout = (width: number) =>
+    act(() =>
+      split().props.onLayout({
+        nativeEvent: { layout: { width, height: 600 } },
+      }),
+    );
+  render(tree());
+  layout(1000);
+  act(() => divider().props.onResponderGrant({}));
+  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 100 } }));
+  act(() => divider().props.onResponderRelease({}));
+  expect(widths()).toEqual([340, 654]);
+  const mountsBeforeCollapse = mounted.mock.calls.length;
+  resize.mockClear();
+  click('Collapse sidebar');
+  expect(widths()).toEqual([64, 930]);
+  expect(divider().props.accessibilityValue).toEqual({
+    min: 64,
+    max: 64,
+    now: 64,
+  });
+  expect(resize.mock.calls).toEqual([
+    ['menu', 64],
+    ['content', 930],
+  ]);
+  // Resizing the window or the pinned boundary must not expand a collapsed column.
+  key(divider(), 'ArrowRight');
+  layout(800);
+  expect(widths()).toEqual([64, 730]);
+  expect(mounted.mock.calls.length).toBe(mountsBeforeCollapse);
+  const saved = serializeNavigationState(nav.getRootState()!);
+  act(() => renderer.unmount());
+  render(tree(saved));
+  layout(1000);
+  expect(widths()).toEqual([64, 930]);
+  click('Expand sidebar');
+  expect(widths()).toEqual([340, 654]);
+  expect(divider().props.accessibilityValue.now).toBe(340);
+  const sidebarId = Object.values(nav.getRootState()!.nodes).find(
+    (n) => n.type === 'sidebar',
+  )!.id;
+  act(() => nav.dispatch({ target: sidebarId, type: 'collapseSidebar' }));
+  expect(widths()).toEqual([64, 930]);
+  layout(600);
+  act(() => nav.dispatch({ target: sidebarId, type: 'expandSidebar' }));
+  expect(widths()).toEqual([274, 320]);
+});
+
+it.each(['left', 'right'] as const)(
+  'synchronizes an initially collapsed %s Sidebar and changing collapsedWidth',
+  (side) => {
+    const Split = createSplitNavigator();
+    const Sidebar = createSidebarNavigator<{ Home: undefined }>();
+    const WidthContext = React.createContext(56);
+    function Menu() {
+      const collapsedWidth = React.useContext(WidthContext);
+      return (
+        <Sidebar.Navigator
+          width="fill"
+          defaultCollapsed
+          collapsedWidth={collapsedWidth}
+          position={side}
+        >
+          <Sidebar.Screen name="Home" component={() => null} />
+        </Sidebar.Navigator>
+      );
+    }
+    const Content = () => null;
+    const tree = (width: number) => (
+      <NavigationContainer>
+        <WidthContext.Provider value={width}>
+          <Split.Navigator>
+            <Split.Column
+              id="left"
+              component={side === 'left' ? Menu : Content}
+              defaultWidth={240}
+              minWidth={180}
+            />
+            <Split.Column
+              id="right"
+              component={side === 'right' ? Menu : Content}
+              defaultWidth={240}
+              minWidth={180}
+            />
+          </Split.Navigator>
+        </WidthContext.Provider>
+      </NavigationContainer>
+    );
+    const widths = () =>
+      ['left', 'right'].map(
+        (id) =>
+          StyleSheet.flatten(
+            native('View').find((n) => n.props.testID === `split-column-${id}`)!
+              .props.style,
+          ).width,
+      );
+    render(tree(56));
+    act(() =>
+      native('View')
+        .find((n) => n.props.testID === 'split-layout')!
+        .props.onLayout({
+          nativeEvent: { layout: { width: 1000, height: 600 } },
+        }),
+    );
+    expect(widths()).toEqual(side === 'left' ? [56, 938] : [938, 56]);
+    act(() => renderer.update(tree(72)));
+    expect(widths()).toEqual(side === 'left' ? [72, 922] : [922, 72]);
+    click('Expand sidebar');
+    expect(widths()).toEqual(side === 'left' ? [240, 754] : [754, 240]);
+  },
+);
+
+it.each(['opt-out', 'nested-screen'] as const)(
+  'keeps the Split column width when collapsing a Sidebar with %s',
+  (mode) => {
+    const Split = createSplitNavigator();
+    const Sidebar = createSidebarNavigator<{ Home: undefined }>();
+    const Tabs = createTabNavigator<{ Menu: undefined }>();
+    function Menu() {
+      return (
+        <Sidebar.Navigator>
+          <Sidebar.Screen name="Home" component={() => null} />
+        </Sidebar.Navigator>
+      );
+    }
+    function Nested() {
+      return (
+        <Tabs.Navigator>
+          <Tabs.Screen name="Menu" component={Menu} />
+        </Tabs.Navigator>
+      );
+    }
+    render(
+      <NavigationContainer>
+        <Split.Navigator>
+          <Split.Column
+            id="menu"
+            component={mode === 'nested-screen' ? Nested : Menu}
+            collapsible={mode !== 'opt-out'}
+            defaultWidth={300}
+          />
+          <Split.Column id="content" component={() => null} />
+        </Split.Navigator>
+      </NavigationContainer>,
+    );
+    click('Collapse sidebar');
+    expect(
+      StyleSheet.flatten(
+        native('View').find((n) => n.props.testID === 'split-column-menu')!
+          .props.style,
+      ).width,
+    ).toBe(300);
+  },
+);

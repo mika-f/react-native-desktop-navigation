@@ -36,6 +36,7 @@ NavigationContainer
 - Content をクリック後、macOS の Cmd+[ / Cmd+]、Windows の Alt+Left / Alt+Right が Content Stack に作用する。
 - About を開いて戻ったとき、Content Stack の状態が残る。
 - Sidebar にフォーカスし、↑ / ↓ / Home / End / Enter、折り畳みボタンを操作する。
+- Sidebar を折り畳むと Split の列幅と Divider も `collapsedWidth` まで縮み、展開するとドラッグで調整した列幅に戻る。折り畳み中にウィンドウをリサイズしても Divider が追従する。
 - Profile の Tabs で Ctrl+Tab / Ctrl+Shift+Tab を操作する。
 - Split の境界を mouse drag し、sidebar の 240〜420 の制約を確認する。境界の ← / → 操作も確認する。
 - ウィンドウを幅700未満にして content のみ表示し、拡大すると sidebar の状態が戻る。

@@ -6,10 +6,10 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { fitSplitWidths, type SplitNavigationState } from '../routers';
+import { splitColumnConfig, type SplitNavigationState } from '../routers';
 import { NavigatorStateContext, useNavigator } from '../core/builder';
 import { Scene } from '../core/Scene';
-import { useNavigationTheme } from '../core/context';
+import { SplitColumnContext, useNavigationTheme } from '../core/context';
 import { consumeKey, DesktopView, eventHandled } from '../platform';
 export interface SplitColumnProps {
   id: string;
@@ -17,6 +17,7 @@ export interface SplitColumnProps {
   minWidth?: number;
   maxWidth?: number;
   defaultWidth?: number;
+  /** Follow a directly nested Sidebar when it collapses (default: true). */
   collapsible?: boolean;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
@@ -151,6 +152,18 @@ export function createSplitNavigator() {
     const [dividerWidths, setDividerWidths] = React.useState<
       Record<string, number>
     >({});
+    const [collapsedWidths, setCollapsedWidths] = React.useState<
+      Record<string, number | null>
+    >({});
+    const onSidebarChange = React.useCallback(
+      (columnId: string, width: number | null) => {
+        setCollapsedWidths((previous) => {
+          if (previous[columnId] === width) return previous;
+          return { ...previous, [columnId]: width };
+        });
+      },
+      [],
+    );
     const layout = props.layout;
     const dividerSpace = (ids: string[]) =>
       ids.slice(0, -1).reduce((total, columnId) => {
@@ -163,17 +176,35 @@ export function createSplitNavigator() {
         );
       }, 0);
     React.useLayoutEffect(() => {
-      if (!size) return;
-      const ids = layout ? layout(size) : columns.map((c) => c.id);
-      const visibleColumns = ids
-        .map((columnId) => columns.find((c) => c.id === columnId))
-        .filter((c): c is SplitColumnProps => !!c);
-      const widths = fitSplitWidths(
-        visibleColumns.map((c) => ({ ...c, name: c.id })),
-        state.widths,
-        size.width - dividerSpace(ids),
-      );
-      store.dispatch({ target: id, type: 'layout', payload: { ids, widths } });
+      const ids = size
+        ? layout
+          ? layout(size)
+          : columns.map((c) => c.id)
+        : state.visibleColumnIds;
+      const before = store.getNode(id)!.state as SplitNavigationState;
+      store.dispatch({
+        target: id,
+        type: 'layout',
+        payload: {
+          ids,
+          availableWidth: size ? size.width - dividerSpace(ids) : undefined,
+          collapsedWidths: Object.fromEntries(
+            columns
+              .filter((c) => c.collapsible === false || c.id in collapsedWidths)
+              .map((c) => [
+                c.id,
+                c.collapsible === false ? null : collapsedWidths[c.id],
+              ]),
+          ),
+        },
+      });
+      const after = store.getNode(id)!.state as SplitNavigationState;
+      if (before.collapsedColumns !== after.collapsedColumns) {
+        for (const columnId of Object.keys(after.widths)) {
+          if (before.widths[columnId] !== after.widths[columnId])
+            props.onColumnResize?.(columnId, after.widths[columnId]);
+        }
+      }
     });
     const ordered = [
       ...state.visibleColumnIds,
@@ -198,6 +229,10 @@ export function createSplitNavigator() {
           >
             {ordered.map((columnId) => {
               const column = columns.find((c) => c.id === columnId)!;
+              const constraints = splitColumnConfig(state, {
+                ...column,
+                name: columnId,
+              });
               const route = state.routes.find((r) => r.name === columnId)!;
               const visible = state.visibleColumnIds.includes(columnId);
               const last =
@@ -227,32 +262,43 @@ export function createSplitNavigator() {
                       {
                         overflow: 'hidden',
                         width: state.widths[columnId],
-                        minWidth: column.minWidth ?? 100,
-                        maxWidth: column.maxWidth,
+                        minWidth: constraints.minWidth ?? 100,
+                        maxWidth: constraints.maxWidth,
                         flexBasis: 'auto',
-                        flexGrow: !size && last ? 1 : 0,
+                        flexGrow:
+                          !size && last && !state.collapsedColumns?.[columnId]
+                            ? 1
+                            : 0,
                         flexShrink: 0,
                       },
                       !visible && { display: 'none' },
                     ]}
                   >
-                    <Scene
-                      nodeId={id}
-                      route={route}
-                      component={column.component}
-                      visible={visible}
-                      options={{
-                        inactiveBehavior: 'keep',
-                        focusBehavior: 'none',
-                        contentStyle: column.contentStyle,
-                      }}
-                    />
+                    <SplitColumnContext.Provider
+                      value={{ nodeId: id, columnId, onSidebarChange }}
+                    >
+                      <Scene
+                        nodeId={id}
+                        route={route}
+                        component={column.component}
+                        visible={visible}
+                        options={{
+                          inactiveBehavior: 'keep',
+                          focusBehavior: 'none',
+                          contentStyle: column.contentStyle,
+                        }}
+                      />
+                    </SplitColumnContext.Provider>
                   </View>
                   {visible &&
                     !last &&
                     (column.dividerShown ?? props.dividerShown ?? true) && (
                       <Divider
-                        column={column}
+                        column={{
+                          ...column,
+                          minWidth: constraints.minWidth,
+                          maxWidth: constraints.maxWidth,
+                        }}
                         width={state.widths[columnId]}
                         resize={resize}
                         style={props.dividerStyle}

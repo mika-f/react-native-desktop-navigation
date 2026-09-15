@@ -19,7 +19,12 @@ import {
 import { NavigationItem, navigationItemStyle } from './NavigationItem';
 import { Scene } from './Scene';
 import { createNavigation } from './navigation';
-import { PlatformContext, useNavigationTheme } from './context';
+import {
+  PlatformContext,
+  ScopeContext,
+  SplitColumnContext,
+  useNavigationTheme,
+} from './context';
 import type { SidebarScreenOptions, SidebarFooterProps } from './types';
 import {
   consumeKey,
@@ -117,6 +122,24 @@ export function SelectionNavigator({
   const refs = React.useRef(new Map<string, FocusTarget>());
   const sidebar = type === 'sidebar';
   const collapsed = sidebar && state.collapsed;
+  const splitColumn = React.useContext(SplitColumnContext);
+  const scope = React.useContext(ScopeContext);
+  const syncColumn =
+    sidebar && splitColumn && scope.nodeId === splitColumn.nodeId
+      ? splitColumn.onSidebarChange
+      : undefined;
+  const columnId = splitColumn?.columnId;
+  const collapsedWidth = props.collapsedWidth ?? 56;
+  React.useLayoutEffect(() => {
+    if (syncColumn && columnId)
+      syncColumn(columnId, collapsed ? collapsedWidth : null);
+  }, [syncColumn, columnId, collapsed, collapsedWidth]);
+  React.useLayoutEffect(
+    () => () => {
+      if (syncColumn && columnId) syncColumn(columnId, null);
+    },
+    [syncColumn, columnId],
+  );
   const focusItem = (index: number) => {
     const item = enabled[(index + enabled.length) % enabled.length];
     if (!item) return;

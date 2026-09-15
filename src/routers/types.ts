@@ -41,6 +41,8 @@ export interface SplitNavigationState {
   activeRouteKey: string;
   widths: Record<string, number>;
   visibleColumnIds: string[];
+  /** Saved expanded widths for columns currently following a collapsed Sidebar. */
+  collapsedColumns?: Record<string, { width: number; expandedWidth: number }>;
 }
 export type NavigationState =
   | StackNavigationState
@@ -83,7 +85,13 @@ export type NavigationAction = { target?: string } & (
     }
   | {
       type: 'layout';
-      payload: { ids: string[]; widths?: Record<string, number> };
+      payload: {
+        ids: string[];
+        widths?: Record<string, number>;
+        availableWidth?: number;
+        /** null restores the expanded width; omitted ids keep their current state. */
+        collapsedWidths?: Record<string, number | null>;
+      };
     }
 );
 export interface RouteConfig {

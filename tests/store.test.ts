@@ -117,3 +117,39 @@ it('does not mutate snapshots and notifies subscribers after state updates', () 
   store.dispatch({ type: 'back' });
   expect(listener).toHaveBeenCalledOnce();
 });
+
+it('rejects invalid collapsed column snapshots while accepting snapshots without collapse metadata', () => {
+  const base = {
+    version: 1,
+    rootNodeId: 'root',
+    nodes: {
+      root: {
+        id: 'root',
+        type: 'split',
+        state: {
+          type: 'split',
+          key: 'root',
+          activeRouteKey: 'menu',
+          routes: [
+            { key: 'menu', name: 'menu' },
+            { key: 'content', name: 'content' },
+          ],
+          visibleColumnIds: ['menu', 'content'],
+          widths: { menu: 56, content: 744 },
+        },
+      },
+    },
+  };
+  expect(() => restoreNavigationState(JSON.stringify(base))).not.toThrow();
+  for (const collapsedColumns of [
+    { menu: { width: 56, expandedWidth: -1 } },
+    { menu: { width: 100, expandedWidth: 240 } },
+    { unknown: { width: 56, expandedWidth: 240 } },
+    [],
+    null,
+  ]) {
+    const snapshot = JSON.parse(JSON.stringify(base));
+    snapshot.nodes.root.state.collapsedColumns = collapsedColumns;
+    expect(() => restoreNavigationState(snapshot)).toThrow(/collapsed split/);
+  }
+});

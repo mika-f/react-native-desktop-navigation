@@ -128,7 +128,7 @@ const Split = createSplitNavigator();
 </Split.Navigator>;
 ```
 
-2〜3 列に対応します。境界の mouse drag、← / →、accessibility の増減操作では、隣接する2列の幅を同時に更新します。両側の min/max を守り、3列の場合も他の境界の位置を保ちます。表示幅は Split 内側の実測幅と Divider の実測幅から計算し、最後の visible 列が残りの幅を使います。ウィンドウが縮む場合は各列の minWidth まで縮めます。全列の minWidth 合計を下回るサイズでは、`layout` で列を非表示にしてください。`layout` は重複のない既知の列 ID を1つ以上返してください。非表示の列も component と Navigation State を保持します。`collapsible` は列のアプリ側設定用情報で、表示は `layout` の返値が決定します。
+2〜3 列に対応します。境界の mouse drag、← / →、accessibility の増減操作では、隣接する2列の幅を同時に更新します。両側の min/max を守り、3列の場合も他の境界の位置を保ちます。表示幅は Split 内側の実測幅と Divider の実測幅から計算し、最後の visible 列が残りの幅を使います。ウィンドウが縮む場合は各列の minWidth まで縮めます。全列の minWidth 合計を下回るサイズでは、`layout` で列を非表示にしてください。`layout` は重複のない既知の列 ID を1つ以上返してください。非表示の列も component と Navigation State を保持します。列全体の表示・非表示は `layout` の返値が決定します。
 
 ### Sidebar も Divider に追従させる
 
@@ -137,7 +137,7 @@ Sidebar のバーが数値の固定幅だと、Split の列幅を変更しても
 ```tsx
 function SidebarNavigation() {
   return (
-    <Sidebar.Navigator width="fill" collapseButtonShown={false}>
+    <Sidebar.Navigator width="fill" collapsedWidth={56}>
       {/* 項目一覧用の Sidebar.Screen。画面の内容は別の Split 列に配置 */}
     </Sidebar.Navigator>
   );
@@ -155,9 +155,11 @@ function SidebarNavigation() {
 </Split.Navigator>;
 ```
 
-`width="fill"` は Sidebar のバーが親幅全体を使う指定です。同じ Sidebar Navigator 内でバーの横に画面を表示する場合は、従来どおり数値の `width` を使います。`collapsedWidth` は折り畳み時のバー幅です。
+`width="fill"` は Sidebar のバーが親幅全体を使う指定です。同じ Sidebar Navigator 内でバーの横に画面を表示する場合は、従来どおり数値の `width` を使います。Split.Column に直接配置した Sidebar を collapse すると、列幅と Divider も `collapsedWidth`（既定値 56）まで縮みます。expand ではドラッグで調整した直前の列幅へ戻り、現在のウィンドウ幅と各列の min/max に収まるよう再計算します。右側の Sidebar、`defaultCollapsed`、プログラムからの開閉、保存状態からの復元にも対応します。
 
-列幅と Divider の位置は同じ Navigation State を参照します。`onColumnResize` はユーザー操作で幅が変わった各列について呼ばれるため、1回のドラッグで左右2列分の通知が発生します。ウィンドウサイズ変更による幅の再計算は `onStateChange` に反映されます。リサイズや Divider の表示切り替えで列の component は再マウントしません。
+折り畳み中は `collapsedWidth` を列の `minWidth` より優先し、その列の幅を固定します。列幅を保って Sidebar のバーだけを開閉する場合は、`Split.Column` に `collapsible={false}` を指定してください。Stack や Tabs の画面内にさらにネストした Sidebar は、外側の Split 列幅を変更しません。
+
+列幅と Divider の位置は同じ Navigation State を参照します。`onColumnResize` はドラッグや Sidebar の開閉連動で幅が変わった各列について呼ばれるため、1回のドラッグで左右2列分の通知が発生します。ウィンドウサイズ変更による幅の再計算は `onStateChange` に反映されます。リサイズや Divider の表示切り替えで列の component は再マウントしません。
 
 Navigator は Screen / Column の component に配置できます。action は現在の Navigator が処理し、処理できなければ親へ伝播します。兄弟 Navigator 間では `dispatch({ type, target: nodeId, ... })` で明示的に対象を指定できます。同一 Screen に同じ種類の Navigator を複数置く場合は、それぞれ固有の `id` を指定します。
 

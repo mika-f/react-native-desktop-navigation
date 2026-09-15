@@ -9,6 +9,12 @@ export const ScopeContext = React.createContext<{
   nodeId?: string;
   routeKey?: string;
 }>({});
+/** Only a Sidebar directly owned by this Split column may resize it. */
+export const SplitColumnContext = React.createContext<{
+  nodeId: string;
+  columnId: string;
+  onSidebarChange: (columnId: string, width: number | null) => void;
+} | null>(null);
 export const ScreenContext = React.createContext<{
   navigation: AnyNavigation;
   route: NavigationRoute;

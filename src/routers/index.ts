@@ -7,6 +7,7 @@ import type {
   SelectionNavigationState,
   SplitNavigationState,
   NavigationAction,
+  RouteConfig,
 } from './types';
 export * from './types';
 let sequence = 0;
@@ -280,6 +281,16 @@ export function fitSplitWidths(
   }
   return fitted;
 }
+/** Collapsed columns stay at their Sidebar width, even below the expanded minimum. */
+export function splitColumnConfig(
+  state: SplitNavigationState,
+  config: RouteConfig,
+): RouteConfig {
+  const collapsed = state.collapsedColumns?.[config.name];
+  return collapsed
+    ? { ...config, minWidth: collapsed.width, maxWidth: collapsed.width }
+    : config;
+}
 export const SplitRouter: Router<SplitNavigationState> = {
   getInitialState(options) {
     validateRoutes(options);
@@ -301,12 +312,15 @@ export const SplitRouter: Router<SplitNavigationState> = {
     };
   },
   reduce(state, action, options) {
+    const configs = options.routes.map((config) =>
+      splitColumnConfig(state, config),
+    );
     if (action.type === 'resizeBoundary') {
       const index = state.visibleColumnIds.indexOf(action.payload.id);
       const rightId = state.visibleColumnIds[index + 1];
       if (index < 0 || !rightId) return null;
-      const left = options.routes.find((c) => c.name === action.payload.id)!;
-      const right = options.routes.find((c) => c.name === rightId)!;
+      const left = configs.find((c) => c.name === action.payload.id)!;
+      const right = configs.find((c) => c.name === rightId)!;
       const total = state.widths[left.name] + state.widths[right.name];
       const min = Math.max(
         left.minWidth ?? 100,
@@ -329,7 +343,7 @@ export const SplitRouter: Router<SplitNavigationState> = {
       };
     }
     if (action.type === 'resize') {
-      const config = options.routes.find((r) => r.name === action.payload.id);
+      const config = configs.find((r) => r.name === action.payload.id);
       if (!config) return null;
       const width = clampColumnWidth(action.payload.width, config);
       return state.widths[config.name] === width
@@ -344,13 +358,57 @@ export const SplitRouter: Router<SplitNavigationState> = {
         ids.some((id) => !state.routes.some((r) => r.name === id))
       )
         throw new Error('Split layout must return unique, known column ids.');
-      const widths = { ...state.widths };
-      for (const config of options.routes) {
+      let widths = { ...state.widths };
+      const collapsedColumns = { ...state.collapsedColumns };
+      const expanded = new Set<string>();
+      let collapseChanged = false;
+      for (const [columnId, width] of Object.entries(
+        action.payload.collapsedWidths ?? {},
+      )) {
+        const config = options.routes.find((c) => c.name === columnId);
+        if (!config) continue;
+        const previous = collapsedColumns[columnId];
+        if (width === null) {
+          if (!previous) continue;
+          widths[columnId] = clampColumnWidth(previous.expandedWidth, config);
+          delete collapsedColumns[columnId];
+          expanded.add(columnId);
+        } else {
+          if (!Number.isFinite(width) || width < 0)
+            throw new Error('Invalid collapsed column width.');
+          if (previous?.width === width) continue;
+          collapsedColumns[columnId] = {
+            width,
+            expandedWidth: previous?.expandedWidth ?? widths[columnId],
+          };
+          widths[columnId] = width;
+        }
+        collapseChanged = true;
+      }
+      const nextConfigs = options.routes.map((config) =>
+        splitColumnConfig({ ...state, collapsedColumns }, config),
+      );
+      for (const config of nextConfigs) {
         const width = action.payload.widths?.[config.name];
         if (width !== undefined && ids.includes(config.name))
           widths[config.name] = clampColumnWidth(width, config);
       }
+      if (action.payload.availableWidth !== undefined) {
+        const visibleConfigs = ids.map(
+          (id) => nextConfigs.find((c) => c.name === id)!,
+        );
+        // Restore an expanded trailing column before giving leftover space to its neighbors.
+        const fitOrder = [
+          ...visibleConfigs.filter((c) => expanded.has(c.name)),
+          ...visibleConfigs.filter((c) => !expanded.has(c.name)),
+        ];
+        widths = {
+          ...widths,
+          ...fitSplitWidths(fitOrder, widths, action.payload.availableWidth),
+        };
+      }
       if (
+        !collapseChanged &&
         ids.join('\0') === state.visibleColumnIds.join('\0') &&
         Object.keys(widths).every((id) => widths[id] === state.widths[id])
       )
@@ -360,6 +418,7 @@ export const SplitRouter: Router<SplitNavigationState> = {
         ...state,
         visibleColumnIds: [...ids],
         widths,
+        ...(collapseChanged && { collapsedColumns }),
         activeRouteKey: ids.includes(active.name)
           ? active.key
           : state.routes.find((r) => r.name === ids[0])!.key,
