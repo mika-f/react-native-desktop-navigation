@@ -99,3 +99,28 @@ const badHeader: import('../src').StackScreenOptions = {
   // @ts-expect-error text style values retain native types
   headerTitleStyle: { fontSize: 'huge' },
 };
+
+export const footerDesign = (
+  <Sidebar.Navigator
+    collapseButtonShown={false}
+    sidebarFooterStyle={{ padding: 8 }}
+    renderSidebarFooter={({
+      collapsed,
+      toggleSidebar,
+      collapseSidebar,
+      expandSidebar,
+      children,
+    }) => {
+      const onPress: () => void = collapsed ? expandSidebar : collapseSidebar;
+      const toggle: () => void = toggleSidebar;
+      return <>{children}</>;
+    }}
+  >
+    <Sidebar.Screen name="Home" component={() => null} />
+  </Sidebar.Navigator>
+);
+const badDivider: import('../src').SplitNavigatorProps = {
+  children: null,
+  // @ts-expect-error visibility must be boolean
+  dividerShown: 'hidden',
+};

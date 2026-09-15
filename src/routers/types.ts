@@ -77,8 +77,14 @@ export type NavigationAction = { target?: string } & (
         | 'expandSidebar'
         | 'toggleSidebar';
     }
-  | { type: 'resize'; payload: { id: string; width: number } }
-  | { type: 'layout'; payload: { ids: string[] } }
+  | {
+      type: 'resize' | 'resizeBoundary';
+      payload: { id: string; width: number };
+    }
+  | {
+      type: 'layout';
+      payload: { ids: string[]; widths?: Record<string, number> };
+    }
 );
 export interface RouteConfig {
   name: string;

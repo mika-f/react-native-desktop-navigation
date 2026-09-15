@@ -4,6 +4,7 @@ import {
   SidebarRouter,
   TabRouter,
   SplitRouter,
+  fitSplitWidths,
   type RouterOptions,
   type StackNavigationState,
   type NavigationAction,
@@ -200,4 +201,75 @@ it('reduces deterministically without mutating the action or state', () => {
   const again = reduce(back, push);
   expect(again.activeRouteKey).not.toBe(a.activeRouteKey);
   expect(StackRouter.getInitialState(options)).toEqual(initial);
+});
+
+it('fits Split columns to a measured viewport and respects minimum and maximum widths', () => {
+  const columns = [
+    { name: 'left', minWidth: 180, maxWidth: 400 },
+    { name: 'right', minWidth: 320, maxWidth: 800 },
+  ];
+  expect(fitSplitWidths(columns, { left: 240, right: 320 }, 994)).toEqual({
+    left: 240,
+    right: 754,
+  });
+  expect(fitSplitWidths(columns, { left: 400, right: 754 }, 600)).toEqual({
+    left: 280,
+    right: 320,
+  });
+  expect(fitSplitWidths(columns, { left: 240, right: 320 }, 1400)).toEqual({
+    left: 400,
+    right: 800,
+  });
+  expect(fitSplitWidths(columns, { left: 240, right: 320 }, 400)).toEqual({
+    left: 180,
+    right: 320,
+  });
+});
+
+it('resizes only the adjacent visible Split columns and clamps against both constraints', () => {
+  const config: RouterOptions = {
+    key: 'split',
+    routes: [
+      { name: 'left', minWidth: 100, maxWidth: 500 },
+      { name: 'middle', minWidth: 150, maxWidth: 350 },
+      { name: 'right', minWidth: 200 },
+    ],
+  };
+  let state = SplitRouter.getInitialState(config);
+  state = SplitRouter.reduce(
+    state,
+    {
+      type: 'layout',
+      payload: {
+        ids: ['left', 'middle', 'right'],
+        widths: { left: 300, middle: 300, right: 400 },
+      },
+    },
+    config,
+  )!;
+  const resized = SplitRouter.reduce(
+    state,
+    { type: 'resizeBoundary', payload: { id: 'left', width: 999 } },
+    config,
+  )!;
+  expect(resized.widths).toEqual({ left: 450, middle: 150, right: 400 });
+  expect(state.widths).toEqual({ left: 300, middle: 300, right: 400 });
+  const back = SplitRouter.reduce(
+    resized,
+    { type: 'resizeBoundary', payload: { id: 'left', width: 0 } },
+    config,
+  )!;
+  expect(back.widths).toEqual({ left: 250, middle: 350, right: 400 });
+  const hidden = SplitRouter.reduce(
+    state,
+    { type: 'layout', payload: { ids: ['left', 'right'] } },
+    config,
+  )!;
+  expect(
+    SplitRouter.reduce(
+      hidden,
+      { type: 'resizeBoundary', payload: { id: 'left', width: 400 } },
+      config,
+    )!.widths,
+  ).toEqual({ left: 400, middle: 300, right: 300 });
 });

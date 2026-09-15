@@ -6,7 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { type SplitNavigationState } from '../routers';
+import { fitSplitWidths, type SplitNavigationState } from '../routers';
 import { NavigatorStateContext, useNavigator } from '../core/builder';
 import { Scene } from '../core/Scene';
 import { useNavigationTheme } from '../core/context';
@@ -20,6 +20,8 @@ export interface SplitColumnProps {
   collapsible?: boolean;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  /** Hide the entire resize handle, including its space and keyboard target. */
+  dividerShown?: boolean;
   dividerStyle?: SplitDividerStyle;
   renderDivider?: (props: SplitDividerRenderProps) => React.ReactNode;
 }
@@ -36,6 +38,8 @@ export interface SplitNavigatorProps {
   id?: string;
   style?: StyleProp<ViewStyle>;
   columnStyle?: StyleProp<ViewStyle>;
+  /** Hide the entire resize handle, including its space and keyboard target. */
+  dividerShown?: boolean;
   dividerStyle?: SplitDividerStyle;
   renderDivider?: (props: SplitDividerRenderProps) => React.ReactNode;
   layout?: (size: { width: number; height: number }) => string[];
@@ -47,12 +51,14 @@ function Divider({
   resize,
   style,
   renderContent,
+  onWidthChange,
 }: {
   column: SplitColumnProps;
   width: number;
   resize: (width: number) => void;
   style?: SplitDividerStyle;
   renderContent?: (props: SplitDividerRenderProps) => React.ReactNode;
+  onWidthChange: (width: number) => void;
 }) {
   const [dragging, setDragging] = React.useState(false);
   const start = React.useRef(width);
@@ -81,6 +87,7 @@ function Divider({
     <DesktopView
       {...responder.panHandlers}
       testID={`split-divider-${column.id}`}
+      onLayout={(event) => onWidthChange(event.nativeEvent.layout.width)}
       accessible
       focusable
       accessibilityRole="adjustable"
@@ -141,15 +148,33 @@ export function createSplitNavigator() {
       width: number;
       height: number;
     } | null>(null);
+    const [dividerWidths, setDividerWidths] = React.useState<
+      Record<string, number>
+    >({});
     const layout = props.layout;
+    const dividerSpace = (ids: string[]) =>
+      ids.slice(0, -1).reduce((total, columnId) => {
+        const column = columns.find((c) => c.id === columnId);
+        return (
+          total +
+          ((column?.dividerShown ?? props.dividerShown ?? true)
+            ? (dividerWidths[columnId] ?? 6)
+            : 0)
+        );
+      }, 0);
     React.useLayoutEffect(() => {
-      if (size)
-        store.dispatch({
-          target: id,
-          type: 'layout',
-          payload: { ids: layout ? layout(size) : columns.map((c) => c.id) },
-        });
-    }, [size, layout, id, store]);
+      if (!size) return;
+      const ids = layout ? layout(size) : columns.map((c) => c.id);
+      const visibleColumns = ids
+        .map((columnId) => columns.find((c) => c.id === columnId))
+        .filter((c): c is SplitColumnProps => !!c);
+      const widths = fitSplitWidths(
+        visibleColumns.map((c) => ({ ...c, name: c.id })),
+        state.widths,
+        size.width - dividerSpace(ids),
+      );
+      store.dispatch({ target: id, type: 'layout', payload: { ids, widths } });
+    });
     const ordered = [
       ...state.visibleColumnIds,
       ...columns
@@ -158,78 +183,94 @@ export function createSplitNavigator() {
     ];
     return (
       <NavigatorStateContext.Provider value={state}>
-        <View
-          style={[styles.split, props.style]}
-          onLayout={(event) => {
-            const { width, height } = event.nativeEvent.layout;
-            setSize((previous) =>
-              previous?.width === width && previous.height === height
-                ? previous
-                : { width, height },
-            );
-          }}
-        >
-          {ordered.map((columnId) => {
-            const column = columns.find((c) => c.id === columnId)!;
-            const route = state.routes.find((r) => r.name === columnId)!;
-            const visible = state.visibleColumnIds.includes(columnId);
-            const last =
-              columnId ===
-              state.visibleColumnIds[state.visibleColumnIds.length - 1];
-            const resize = (width: number) => {
-              store.dispatch({
-                target: id,
-                type: 'resize',
-                payload: { id: columnId, width },
-              });
-              props.onColumnResize?.(
-                columnId,
-                (store.getNode(id)!.state as SplitNavigationState).widths[
-                  columnId
-                ],
+        <View style={[styles.split, props.style]}>
+          <View
+            testID="split-layout"
+            style={styles.row}
+            onLayout={(event) => {
+              const { width, height } = event.nativeEvent.layout;
+              setSize((previous) =>
+                previous?.width === width && previous.height === height
+                  ? previous
+                  : { width, height },
               );
-            };
-            return (
-              <React.Fragment key={route.key}>
-                <View
-                  testID={`split-column-${columnId}`}
-                  style={[
-                    props.columnStyle,
-                    column.style,
-                    {
-                      width: state.widths[columnId],
-                      minWidth: column.minWidth ?? 100,
-                      maxWidth: column.maxWidth,
-                      flexGrow: last ? 1 : 0,
-                      flexShrink: 0,
-                    },
-                    !visible && { display: 'none' },
-                  ]}
-                >
-                  <Scene
-                    nodeId={id}
-                    route={route}
-                    component={column.component}
-                    visible={visible}
-                    options={{
-                      inactiveBehavior: 'keep',
-                      focusBehavior: 'none',
-                      contentStyle: column.contentStyle,
-                    }}
-                  />
-                </View>
-                {visible && !last && (
-                  <Divider
-                    column={column}
-                    width={state.widths[columnId]}
-                    resize={resize}
-                    style={props.dividerStyle}
-                    renderContent={props.renderDivider}
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
+            }}
+          >
+            {ordered.map((columnId) => {
+              const column = columns.find((c) => c.id === columnId)!;
+              const route = state.routes.find((r) => r.name === columnId)!;
+              const visible = state.visibleColumnIds.includes(columnId);
+              const last =
+                columnId ===
+                state.visibleColumnIds[state.visibleColumnIds.length - 1];
+              const resize = (width: number) => {
+                const before = store.getNode(id)!.state as SplitNavigationState;
+                store.dispatch({
+                  target: id,
+                  // Native layout precedes input. The fallback supports pre-layout imperative use.
+                  type: size ? 'resizeBoundary' : 'resize',
+                  payload: { id: columnId, width },
+                });
+                const after = store.getNode(id)!.state as SplitNavigationState;
+                for (const changedId of after.visibleColumnIds) {
+                  if (before.widths[changedId] !== after.widths[changedId])
+                    props.onColumnResize?.(changedId, after.widths[changedId]);
+                }
+              };
+              return (
+                <React.Fragment key={route.key}>
+                  <View
+                    testID={`split-column-${columnId}`}
+                    style={[
+                      props.columnStyle,
+                      column.style,
+                      {
+                        overflow: 'hidden',
+                        width: state.widths[columnId],
+                        minWidth: column.minWidth ?? 100,
+                        maxWidth: column.maxWidth,
+                        flexBasis: 'auto',
+                        flexGrow: !size && last ? 1 : 0,
+                        flexShrink: 0,
+                      },
+                      !visible && { display: 'none' },
+                    ]}
+                  >
+                    <Scene
+                      nodeId={id}
+                      route={route}
+                      component={column.component}
+                      visible={visible}
+                      options={{
+                        inactiveBehavior: 'keep',
+                        focusBehavior: 'none',
+                        contentStyle: column.contentStyle,
+                      }}
+                    />
+                  </View>
+                  {visible &&
+                    !last &&
+                    (column.dividerShown ?? props.dividerShown ?? true) && (
+                      <Divider
+                        column={column}
+                        width={state.widths[columnId]}
+                        resize={resize}
+                        style={props.dividerStyle}
+                        renderContent={props.renderDivider}
+                        onWidthChange={(width) => {
+                          if (!Number.isFinite(width) || width < 0) return;
+                          setDividerWidths((previous) =>
+                            previous[columnId] === width
+                              ? previous
+                              : { ...previous, [columnId]: width },
+                          );
+                        }}
+                      />
+                    )}
+                </React.Fragment>
+              );
+            })}
+          </View>
         </View>
       </NavigatorStateContext.Provider>
     );
@@ -238,4 +279,5 @@ export function createSplitNavigator() {
 }
 const styles = StyleSheet.create({
   split: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
+  row: { flex: 1, minWidth: 0, flexDirection: 'row', overflow: 'hidden' },
 });

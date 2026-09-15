@@ -20,7 +20,7 @@ import { NavigationItem, navigationItemStyle } from './NavigationItem';
 import { Scene } from './Scene';
 import { createNavigation } from './navigation';
 import { PlatformContext, useNavigationTheme } from './context';
-import type { SidebarScreenOptions } from './types';
+import type { SidebarScreenOptions, SidebarFooterProps } from './types';
 import {
   consumeKey,
   DesktopView,
@@ -38,6 +38,11 @@ export interface SelectionNavigatorProps {
   contentStyle?: StyleProp<ViewStyle>;
   sectionStyle?: StyleProp<ViewStyle>;
   sectionTitleStyle?: StyleProp<TextStyle>;
+  /** Hide the default button independently of programmatic collapse actions. */
+  collapseButtonShown?: boolean;
+  sidebarFooterStyle?: StyleProp<ViewStyle>;
+  /** Replace the entire footer. Return null to remove it without reserving space. */
+  renderSidebarFooter?: (props: SidebarFooterProps) => React.ReactNode;
   collapseButtonStyle?: StyleProp<ViewStyle>;
   collapseLabelStyle?: StyleProp<TextStyle>;
   renderCollapseButtonContent?: (props: {
@@ -45,7 +50,8 @@ export interface SelectionNavigatorProps {
     children: React.ReactNode;
   }) => React.ReactNode;
   position?: 'left' | 'right';
-  width?: number;
+  /** Use 'fill' to follow the width of a containing Split.Column. */
+  width?: number | 'fill';
   minWidth?: number;
   maxWidth?: number;
   collapsible?: boolean;
@@ -131,6 +137,36 @@ export function SelectionNavigator({
       {collapsed ? '»' : '«'}
     </Text>
   );
+  const collapseButton =
+    sidebar &&
+    props.collapsible !== false &&
+    props.collapseButtonShown !== false ? (
+      <Pressable
+        accessible
+        focusable
+        accessibilityRole="button"
+        accessibilityLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        onPress={() => navigation.toggleSidebar()}
+        style={[navigationItemStyle, props.collapseButtonStyle]}
+      >
+        {props.renderCollapseButtonContent
+          ? props.renderCollapseButtonContent({
+              collapsed,
+              children: collapseContent,
+            })
+          : collapseContent}
+      </Pressable>
+    ) : null;
+  const footer =
+    sidebar && props.renderSidebarFooter
+      ? props.renderSidebarFooter({
+          collapsed,
+          collapseSidebar: navigation.collapseSidebar,
+          expandSidebar: navigation.expandSidebar,
+          toggleSidebar: navigation.toggleSidebar,
+          children: collapseButton,
+        })
+      : collapseButton;
   const rail = (
     <DesktopView
       accessibilityRole={sidebar ? 'menu' : 'tablist'}
@@ -181,13 +217,16 @@ export function SelectionNavigator({
           ? {
               width: collapsed
                 ? (props.collapsedWidth ?? 56)
-                : Math.min(
-                    props.maxWidth ?? Infinity,
-                    Math.max(
-                      props.minWidth ?? 120,
-                      props.width ?? platform.sidebar.defaultWidth,
+                : props.width === 'fill'
+                  ? '100%'
+                  : Math.min(
+                      props.maxWidth ?? Infinity,
+                      Math.max(
+                        props.minWidth ?? 120,
+                        props.width ?? platform.sidebar.defaultWidth,
+                      ),
                     ),
-                  ),
+              maxWidth: '100%',
               ...(props.position === 'right'
                 ? { borderLeftWidth: StyleSheet.hairlineWidth }
                 : { borderRightWidth: StyleSheet.hairlineWidth }),
@@ -262,22 +301,10 @@ export function SelectionNavigator({
           );
         })}
       </ScrollView>
-      {sidebar && props.collapsible !== false && (
-        <Pressable
-          accessible
-          focusable
-          accessibilityRole="button"
-          accessibilityLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          onPress={() => navigation.toggleSidebar()}
-          style={[navigationItemStyle, props.collapseButtonStyle]}
-        >
-          {props.renderCollapseButtonContent
-            ? props.renderCollapseButtonContent({
-                collapsed,
-                children: collapseContent,
-              })
-            : collapseContent}
-        </Pressable>
+      {sidebar && footer != null && footer !== false && (
+        <View testID="sidebar-footer" style={props.sidebarFooterStyle}>
+          {footer}
+        </View>
       )}
     </DesktopView>
   );

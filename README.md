@@ -128,7 +128,36 @@ const Split = createSplitNavigator();
 </Split.Navigator>;
 ```
 
-2〜3 列に対応します。境界の mouse drag、← / →、accessibility の増減操作でリサイズでき、min/max を守ります。最後の visible 列は余白を利用します。`layout` は重複のない既知の列 ID を1つ以上返してください。非表示の列も component と Navigation State を保持します。`collapsible` は列のアプリ側設定用情報で、表示は `layout` の返値が決定します。
+2〜3 列に対応します。境界の mouse drag、← / →、accessibility の増減操作では、隣接する2列の幅を同時に更新します。両側の min/max を守り、3列の場合も他の境界の位置を保ちます。表示幅は Split 内側の実測幅と Divider の実測幅から計算し、最後の visible 列が残りの幅を使います。ウィンドウが縮む場合は各列の minWidth まで縮めます。全列の minWidth 合計を下回るサイズでは、`layout` で列を非表示にしてください。`layout` は重複のない既知の列 ID を1つ以上返してください。非表示の列も component と Navigation State を保持します。`collapsible` は列のアプリ側設定用情報で、表示は `layout` の返値が決定します。
+
+### Sidebar も Divider に追従させる
+
+Sidebar のバーが数値の固定幅だと、Split の列幅を変更してもバー自体の幅は変わりません。項目一覧を専用の Split 列に置く場合は、`width="fill"` を指定します。列をドラッグすると項目・選択背景・フッターも列の幅に追従します。バーは列の幅を超えて描画しません。
+
+```tsx
+function SidebarNavigation() {
+  return (
+    <Sidebar.Navigator width="fill" collapseButtonShown={false}>
+      {/* 項目一覧用の Sidebar.Screen。画面の内容は別の Split 列に配置 */}
+    </Sidebar.Navigator>
+  );
+}
+
+<Split.Navigator onColumnResize={(id, width) => saveWidth(id, width)}>
+  <Split.Column
+    id="sidebar"
+    component={SidebarNavigation}
+    defaultWidth={240}
+    minWidth={180}
+    maxWidth={400}
+  />
+  <Split.Column id="content" component={ContentNavigation} minWidth={320} />
+</Split.Navigator>;
+```
+
+`width="fill"` は Sidebar のバーが親幅全体を使う指定です。同じ Sidebar Navigator 内でバーの横に画面を表示する場合は、従来どおり数値の `width` を使います。`collapsedWidth` は折り畳み時のバー幅です。
+
+列幅と Divider の位置は同じ Navigation State を参照します。`onColumnResize` はユーザー操作で幅が変わった各列について呼ばれるため、1回のドラッグで左右2列分の通知が発生します。ウィンドウサイズ変更による幅の再計算は `onStateChange` に反映されます。リサイズや Divider の表示切り替えで列の component は再マウントしません。
 
 Navigator は Screen / Column の component に配置できます。action は現在の Navigator が処理し、処理できなければ親へ伝播します。兄弟 Navigator 間では `dispatch({ type, target: nodeId, ... })` で明示的に対象を指定できます。同一 Screen に同じ種類の Navigator を複数置く場合は、それぞれ固有の `id` を指定します。
 
@@ -212,9 +241,9 @@ Container の mount 前・unmount 後の ref 操作は no-op です。`initialSt
 | Sidebar / Tabs のバー      | Navigator の `barStyle`、`barContentStyle`（スクロール領域内）、`contentStyle`（画面領域の外枠）                            |
 | Sidebar / Tabs の項目      | Screen options の `itemStyle`、`labelStyle`、`iconContainerStyle`、`badgeStyle`、`renderItemContent`                        |
 | Sidebar Section 見出し     | Navigator の `sectionStyle` / `sectionTitleStyle`、Section の `style` / `titleStyle` / `renderTitle`                        |
-| Sidebar 開閉ボタン         | Navigator の `collapseButtonStyle`、`collapseLabelStyle`、`renderCollapseButtonContent`                                     |
+| Sidebar 開閉ボタン         | Navigator の `collapseButtonShown`、`collapseButtonStyle`、`collapseLabelStyle`、`renderCollapseButtonContent`              |
 | Split 列                   | Navigator の `columnStyle`、Column の `style` / `contentStyle`                                                              |
-| Split 境界                 | Navigator / Column の `dividerStyle`、`renderDivider`                                                                       |
+| Split 境界                 | Navigator / Column の `dividerShown`、`dividerStyle`、`renderDivider`                                                       |
 
 `screenOptions` は各 Screen の既定値です。同じ option を Screen の `options` に指定すると、その option を置き換えます。既定の内部スタイルの後に指定スタイルを適用します。ただし、非表示 Scene の `display: none` と、Split の列幅・min/max・表示状態、および transition 中の `opacity` / `transform` は Navigation 側の制御を優先します。列幅は `defaultWidth` / `minWidth` / `maxWidth` とリサイズ操作で指定してください。
 
@@ -249,6 +278,46 @@ Container の mount 前・unmount 後の ref 操作は no-op です。`initialSt
 ```
 
 項目の4つの style option は静的スタイルのほか、`NavigationItemState` を受け取る関数に対応します。状態は `selected`、`focused`、`hovered`、`pressed`、`disabled`、`collapsed` です。`selected` は現在の画面、`focused` は項目への native / keyboard focus を示します。既存の `icon({ focused })` の `focused` は従来どおり選択状態です。`badgeStyle` は文字列・数値のバッジ用で、ReactNode のバッジはその Node 自体をスタイリングします。
+
+### Divider を消す / Sidebar 下部を置き換える
+
+Split の境界を完全に消すには `dividerShown={false}` を指定します。線だけでなく、境界の幅・mouse drag 領域・keyboard / accessibility の操作対象も取り除きます。列の component と状態は保持します。
+
+```tsx
+<Split.Navigator dividerShown={false}>
+  <Split.Column id="sidebar" component={SidebarNavigation} minWidth={180} />
+  <Split.Column id="content" component={ContentNavigation} minWidth={320} />
+</Split.Navigator>
+```
+
+Column に `dividerShown` を指定すると、その列の直後の境界について Navigator の指定を上書きできます。最後の visible 列には境界を表示しません。`renderDivider={() => null}` は境界の中身だけを消す既存 API なので、外枠ごと消す場合は `dividerShown` を使用します。リサイズ操作を残して線だけ透明にする場合は `dividerStyle={{ backgroundColor: 'transparent' }}` を使います。
+
+Sidebar 自体の端の border は Split Divider とは別です。両方消す場合は Sidebar にも `barStyle={{ borderLeftWidth: 0, borderRightWidth: 0 }}` を指定してください。
+
+Sidebar 下部に表示される `«` は Sidebar の開閉ボタンです。ボタンだけを消す場合は `collapseButtonShown={false}` を指定します。下部全体を自由な UI に置き換える場合は `renderSidebarFooter` を使います。
+
+```tsx
+<Sidebar.Navigator
+  sidebarFooterStyle={{ padding: 8 }}
+  renderSidebarFooter={({ collapsed, toggleSidebar }) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={collapsed ? 'サイドバーを開く' : 'サイドバーを閉じる'}
+      focusable
+      onPress={toggleSidebar}
+      style={{ padding: 10, borderWidth: 0 }}
+    >
+      <Text>{collapsed ? '開く' : '閉じる'}</Text>
+    </Pressable>
+  )}
+>
+  {/* Sidebar.Screen */}
+</Sidebar.Navigator>
+```
+
+この renderer は既定の Pressable を丸ごと置き換えます。`renderSidebarFooter={() => null}` なら下部の外枠と余白も削除します。従来の `renderCollapseButtonContent` は既定ボタンの中身だけを置き換える API として引き続き使用できます。
+
+`SidebarFooterProps` は `collapsed`、`toggleSidebar` / `collapseSidebar` / `expandSidebar`、既定ボタンの `children` を提供します。`children` を描画すれば既定ボタンを独自フッターに含めることもできます。`collapseButtonShown={false}` または `collapsible={false}` の場合、`children` は `null` です。独自フッターはこれらの指定とは独立して表示できます。完全に差し替える UI のラベル・role・キー操作はアプリ側で設定します。
 
 ### 項目や境界の中身を差し替える
 

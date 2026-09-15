@@ -868,3 +868,252 @@ it('styles Split columns and custom resize handles without losing constraints, s
   expect(json).not.toContain('#column');
   expect(json).not.toContain('renderDivider');
 });
+
+it('removes the entire Split divider and its interaction surface without remounting columns', () => {
+  const Split = createSplitNavigator();
+  const mounted = vi.fn();
+  const handle = vi.fn(() => <Text>Grip</Text>);
+  function Content() {
+    React.useEffect(() => {
+      mounted();
+    }, []);
+    return null;
+  }
+  const tree = (shown: boolean) => (
+    <NavigationContainer>
+      <Split.Navigator dividerShown={shown} renderDivider={handle}>
+        <Split.Column id="left" component={Content} />
+        <Split.Column id="right" component={Content} />
+      </Split.Navigator>
+    </NavigationContainer>
+  );
+  render(tree(true));
+  expect(
+    native('View').filter((n) => n.props.accessibilityRole === 'adjustable'),
+  ).toHaveLength(1);
+  handle.mockClear();
+  act(() => renderer.update(tree(false)));
+  expect(
+    native('View').filter((n) => n.props.accessibilityRole === 'adjustable'),
+  ).toHaveLength(0);
+  expect(
+    native('View').find((n) => n.props.testID === 'split-divider-left'),
+  ).toBeUndefined();
+  expect(handle).not.toHaveBeenCalled();
+  expect(mounted).toHaveBeenCalledTimes(2);
+  act(() => renderer.update(tree(true)));
+  expect(
+    native('View').filter((n) => n.props.accessibilityRole === 'adjustable'),
+  ).toHaveLength(1);
+  expect(mounted).toHaveBeenCalledTimes(2);
+});
+
+it('lets individual Split columns override divider visibility', () => {
+  const Split = createSplitNavigator();
+  const Content = () => null;
+  render(
+    <NavigationContainer>
+      <Split.Navigator dividerShown={false}>
+        <Split.Column id="left" component={Content} />
+        <Split.Column id="middle" component={Content} dividerShown />
+        <Split.Column id="right" component={Content} dividerShown />
+      </Split.Navigator>
+    </NavigationContainer>,
+  );
+  expect(
+    native('View')
+      .filter((n) => n.props.accessibilityRole === 'adjustable')
+      .map((n) => n.props.testID),
+  ).toEqual(['split-divider-middle']);
+});
+
+it('replaces the complete Sidebar footer without retaining the default button shell', () => {
+  const Sidebar = createSidebarNavigator<{ Home: undefined }>();
+  render(
+    <NavigationContainer>
+      <Sidebar.Navigator
+        sidebarFooterStyle={{ padding: 12 }}
+        renderSidebarFooter={({ collapsed, toggleSidebar }) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Custom toggle"
+            onPress={toggleSidebar}
+          >
+            <Text>{collapsed ? 'Open' : 'Close'}</Text>
+          </Pressable>
+        )}
+      >
+        <Sidebar.Screen name="Home" component={() => null} />
+      </Sidebar.Navigator>
+    </NavigationContainer>,
+  );
+  expect(!!button('Collapse sidebar')).toBe(false);
+  expect(button('Custom toggle')).toBeDefined();
+  expect(
+    StyleSheet.flatten(
+      native('View').find((n) => n.props.testID === 'sidebar-footer')!.props
+        .style,
+    ).padding,
+  ).toBe(12);
+  click('Custom toggle');
+  expect(
+    StyleSheet.flatten(
+      native('View').find((n) => n.props.accessibilityRole === 'menu')!.props
+        .style,
+    ).width,
+  ).toBe(56);
+  expect(
+    button('Custom toggle').findAll((n) => String(n.type) === 'Text')[0].props
+      .children,
+  ).toBe('Open');
+});
+
+it.each(['hidden-button', 'null-footer'] as const)(
+  'removes the default Sidebar footer completely with %s',
+  (mode) => {
+    const Sidebar = createSidebarNavigator<{ Home: undefined }>();
+    render(
+      <NavigationContainer>
+        <Sidebar.Navigator
+          collapseButtonShown={mode !== 'hidden-button'}
+          renderSidebarFooter={mode === 'null-footer' ? () => null : undefined}
+        >
+          <Sidebar.Screen name="Home" component={() => null} />
+        </Sidebar.Navigator>
+      </NavigationContainer>,
+    );
+    expect(!!button('Collapse sidebar')).toBe(false);
+    expect(
+      native('View').find((n) => n.props.testID === 'sidebar-footer'),
+    ).toBeUndefined();
+  },
+);
+
+it('keeps the divider, both column widths, and a fill-width Sidebar synchronized while dragging', () => {
+  const Split = createSplitNavigator();
+  const Sidebar = createSidebarNavigator<{ Home: undefined }>();
+  const nav = createNavigationRef();
+  const resize = vi.fn();
+  const mounted = vi.fn();
+  function Menu() {
+    React.useEffect(() => {
+      mounted();
+    }, []);
+    return (
+      <Sidebar.Navigator width="fill" collapseButtonShown={false}>
+        <Sidebar.Screen name="Home" component={() => null} />
+      </Sidebar.Navigator>
+    );
+  }
+  render(
+    <NavigationContainer ref={nav}>
+      <Split.Navigator onColumnResize={resize}>
+        <Split.Column
+          id="menu"
+          component={Menu}
+          defaultWidth={240}
+          minWidth={180}
+          maxWidth={900}
+        />
+        <Split.Column id="content" component={() => null} minWidth={320} />
+      </Split.Navigator>
+    </NavigationContainer>,
+  );
+  const split = () =>
+    native('View').find((n) => n.props.testID === 'split-layout')!;
+  const divider = () =>
+    native('View').find((n) => n.props.testID === 'split-divider-menu')!;
+  const widths = () =>
+    ['menu', 'content'].map(
+      (id) =>
+        StyleSheet.flatten(
+          native('View').find((n) => n.props.testID === `split-column-${id}`)!
+            .props.style,
+        ).width,
+    );
+  act(() =>
+    split().props.onLayout({
+      nativeEvent: { layout: { width: 1000, height: 600 } },
+    }),
+  );
+  expect(widths()).toEqual([240, 754]);
+  act(() =>
+    divider().props.onLayout({ nativeEvent: { layout: { width: 12 } } }),
+  );
+  expect(widths()).toEqual([240, 748]);
+  act(() => divider().props.onResponderGrant({}));
+  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 100 } }));
+  expect(widths()).toEqual([340, 648]);
+  expect(divider().props.accessibilityValue.now).toBe(340);
+  expect(resize.mock.calls).toEqual([
+    ['menu', 340],
+    ['content', 648],
+  ]);
+  expect(
+    StyleSheet.flatten(
+      native('View').find((n) => n.props.accessibilityRole === 'menu')!.props
+        .style,
+    ),
+  ).toMatchObject({ width: '100%', maxWidth: '100%' });
+  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 1000 } }));
+  expect(widths()).toEqual([668, 320]);
+  act(() => divider().props.onResponderRelease({}));
+  key(divider(), 'ArrowLeft');
+  expect(widths()).toEqual([658, 330]);
+  act(() =>
+    split().props.onLayout({
+      nativeEvent: { layout: { width: 600, height: 600 } },
+    }),
+  );
+  expect(widths()).toEqual([268, 320]);
+  expect(
+    (
+      nav.getRootState()!.nodes.root
+        .state as import('../src').SplitNavigationState
+    ).widths,
+  ).toEqual({ menu: 268, content: 320 });
+  expect(mounted).toHaveBeenCalledOnce();
+});
+
+it('reclaims hidden divider space and refits a responsive Split without losing a hidden column width', () => {
+  const Split = createSplitNavigator();
+  const Content = () => null;
+  const layout = ({ width }: { width: number }) =>
+    width < 500 ? ['right'] : ['left', 'right'];
+  const tree = (shown: boolean) => (
+    <NavigationContainer>
+      <Split.Navigator layout={layout} dividerShown={shown}>
+        <Split.Column id="left" component={Content} defaultWidth={200} />
+        <Split.Column id="right" component={Content} minWidth={200} />
+      </Split.Navigator>
+    </NavigationContainer>
+  );
+  render(tree(true));
+  const split = () =>
+    native('View').find((n) => n.props.testID === 'split-layout')!;
+  const width = (id: string) =>
+    StyleSheet.flatten(
+      native('View').find((n) => n.props.testID === `split-column-${id}`)!.props
+        .style,
+    ).width;
+  act(() =>
+    split().props.onLayout({
+      nativeEvent: { layout: { width: 800, height: 500 } },
+    }),
+  );
+  expect([width('left'), width('right')]).toEqual([200, 594]);
+  act(() => renderer.update(tree(false)));
+  expect([width('left'), width('right')]).toEqual([200, 600]);
+  act(() =>
+    split().props.onLayout({
+      nativeEvent: { layout: { width: 400, height: 500 } },
+    }),
+  );
+  expect([width('left'), width('right')]).toEqual([200, 400]);
+  act(() =>
+    split().props.onLayout({
+      nativeEvent: { layout: { width: 800, height: 500 } },
+    }),
+  );
+  expect([width('left'), width('right')]).toEqual([200, 600]);
+});

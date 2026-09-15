@@ -245,6 +245,41 @@ export function clampColumnWidth(
     throw new Error('Invalid column width constraints.');
   return Math.min(max, Math.max(min, Number.isFinite(width) ? width : min));
 }
+/** Fit visible columns to the available content width (excluding divider widths). */
+export function fitSplitWidths(
+  columns: RouterOptions['routes'],
+  widths: Record<string, number>,
+  availableWidth: number,
+): Record<string, number> {
+  const fitted = Object.fromEntries(
+    columns.map((c) => [
+      c.name,
+      clampColumnWidth(
+        widths[c.name] ?? c.defaultWidth ?? c.minWidth ?? 240,
+        c,
+      ),
+    ]),
+  );
+  if (!columns.length || !Number.isFinite(availableWidth)) return fitted;
+  const last = columns[columns.length - 1];
+  const fixedWidth = columns
+    .slice(0, -1)
+    .reduce((sum, c) => sum + fitted[c.name], 0);
+  fitted[last.name] = clampColumnWidth(
+    Math.max(0, availableWidth - fixedWidth),
+    last,
+  );
+  let remaining =
+    availableWidth -
+    Object.values(fitted).reduce((sum, width) => sum + width, 0);
+  // Respect all min/max constraints when the viewport grows or shrinks.
+  for (const column of [...columns].reverse()) {
+    const previous = fitted[column.name];
+    fitted[column.name] = clampColumnWidth(previous + remaining, column);
+    remaining -= fitted[column.name] - previous;
+  }
+  return fitted;
+}
 export const SplitRouter: Router<SplitNavigationState> = {
   getInitialState(options) {
     validateRoutes(options);
@@ -266,6 +301,33 @@ export const SplitRouter: Router<SplitNavigationState> = {
     };
   },
   reduce(state, action, options) {
+    if (action.type === 'resizeBoundary') {
+      const index = state.visibleColumnIds.indexOf(action.payload.id);
+      const rightId = state.visibleColumnIds[index + 1];
+      if (index < 0 || !rightId) return null;
+      const left = options.routes.find((c) => c.name === action.payload.id)!;
+      const right = options.routes.find((c) => c.name === rightId)!;
+      const total = state.widths[left.name] + state.widths[right.name];
+      const min = Math.max(
+        left.minWidth ?? 100,
+        total - (right.maxWidth ?? Number.MAX_SAFE_INTEGER),
+      );
+      const max = Math.min(
+        left.maxWidth ?? Number.MAX_SAFE_INTEGER,
+        total - (right.minWidth ?? 100),
+      );
+      if (min > max || !Number.isFinite(action.payload.width)) return state;
+      const width = Math.max(min, Math.min(max, action.payload.width));
+      if (width === state.widths[left.name]) return state;
+      return {
+        ...state,
+        widths: {
+          ...state.widths,
+          [left.name]: width,
+          [right.name]: total - width,
+        },
+      };
+    }
     if (action.type === 'resize') {
       const config = options.routes.find((r) => r.name === action.payload.id);
       if (!config) return null;
@@ -282,11 +344,22 @@ export const SplitRouter: Router<SplitNavigationState> = {
         ids.some((id) => !state.routes.some((r) => r.name === id))
       )
         throw new Error('Split layout must return unique, known column ids.');
-      if (ids.join('\0') === state.visibleColumnIds.join('\0')) return state;
+      const widths = { ...state.widths };
+      for (const config of options.routes) {
+        const width = action.payload.widths?.[config.name];
+        if (width !== undefined && ids.includes(config.name))
+          widths[config.name] = clampColumnWidth(width, config);
+      }
+      if (
+        ids.join('\0') === state.visibleColumnIds.join('\0') &&
+        Object.keys(widths).every((id) => widths[id] === state.widths[id])
+      )
+        return state;
       const active = state.routes.find((r) => r.key === state.activeRouteKey)!;
       return {
         ...state,
         visibleColumnIds: [...ids],
+        widths,
         activeRouteKey: ids.includes(active.name)
           ? active.key
           : state.routes.find((r) => r.name === ids[0])!.key,

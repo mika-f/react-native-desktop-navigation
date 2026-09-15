@@ -120,6 +120,14 @@ export interface NavigationItemContentProps extends NavigationItemState {
   /** Default icon, label, and badge, with their configured styles. */
   children: React.ReactNode;
 }
+export interface SidebarFooterProps {
+  collapsed: boolean;
+  collapseSidebar(): void;
+  expandSidebar(): void;
+  toggleSidebar(): void;
+  /** The complete default collapse button, or null when it is hidden. */
+  children: React.ReactNode;
+}
 export interface SidebarSectionOptions {
   title?: string;
   style?: StyleProp<ViewStyle>;

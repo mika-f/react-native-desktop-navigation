@@ -48,3 +48,7 @@ NavigationContainer
 ## カスタムデザインの Example
 
 `Customization.tsx` を同じ手順でホストへコピーし、`App` の代わりに登録すると、ダークテーマの Header・Sidebar・Tabs・Split を確認できます。各部位のスタイル、選択 / focus / hover / press 状態、項目の描画差し替え、drag 中のリサイズハンドルを実装した例です。
+
+`<Customization showDividers={false} />` で Split Divider を完全に非表示にできます。この Example の Sidebar 下部は `renderSidebarFooter` で既定ボタン全体を置き換えています。下部自体を削除する場合は `renderSidebarFooter={() => null}` を指定してください。
+
+Split の境界をドラッグすると、隣接する2列の幅が同時に変化します。Sidebar のバーも列幅全体に追従させる場合は `Sidebar.Navigator` の `width` を `"fill"` に変更してください（項目一覧専用の列向け）。数値の場合はバー幅を固定し、同じ列内の画面領域が伸縮します。

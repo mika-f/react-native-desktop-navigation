@@ -88,12 +88,19 @@ function NavigationSidebar() {
       barStyle={{ backgroundColor: theme.colors.surface, borderRightWidth: 0 }}
       barContentStyle={{ padding: 4 }}
       screenOptions={itemDesign}
-      collapseButtonStyle={{ margin: 8, borderRadius: 10 }}
-      collapseLabelStyle={{ color: theme.colors.accent }}
-      renderCollapseButtonContent={({ collapsed }) => (
-        <Text style={{ color: theme.colors.accent }}>
-          {collapsed ? '→' : '← Collapse'}
-        </Text>
+      sidebarFooterStyle={{ padding: 8 }}
+      renderSidebarFooter={({ collapsed, toggleSidebar }) => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          focusable
+          onPress={toggleSidebar}
+          style={{ padding: 10, borderWidth: 0, borderRadius: 10 }}
+        >
+          <Text style={{ color: theme.colors.accent }}>
+            {collapsed ? '→' : '← Collapse'}
+          </Text>
+        </Pressable>
       )}
     >
       <Sidebar.Section
@@ -169,10 +176,13 @@ function NavigationContent() {
   );
 }
 /** Register this component instead of App to try the customization APIs in a native host. */
-export default function Customization() {
+export default function Customization({
+  showDividers = true,
+}: { showDividers?: boolean } = {}) {
   return (
     <NavigationContainer theme={theme}>
       <Split.Navigator
+        dividerShown={showDividers}
         dividerStyle={({ dragging }) => ({
           width: 12,
           alignItems: 'center',

@@ -1,6 +1,6 @@
 {
   "name": "@natsuneko-laboratory/react-native-desktop-navigation",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "Desktop-first navigation for React Native macOS and Windows",
   "license": "MIT",
   "main": "./dist/index.js",
