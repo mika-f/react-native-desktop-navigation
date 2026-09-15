@@ -5,7 +5,11 @@ import {
   SelectionNavigator,
   type SelectionNavigatorProps,
 } from '../core/SelectionNavigator';
-import type { SidebarNavigation, SidebarScreenOptions } from '../core/types';
+import type {
+  SidebarNavigation,
+  SidebarScreenOptions,
+  SidebarSectionOptions,
+} from '../core/types';
 export interface SidebarNavigatorOptions extends SelectionNavigatorProps {}
 export function createSidebarNavigator<
   P extends ParamListBase = ParamListBase,
@@ -15,7 +19,9 @@ export function createSidebarNavigator<
   ) {
     return null;
   }
-  function Section(_props: { title?: string; children: React.ReactNode }) {
+  function Section(
+    _props: SidebarSectionOptions & { children: React.ReactNode },
+  ) {
     return null;
   }
   function Navigator(

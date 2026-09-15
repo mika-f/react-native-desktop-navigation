@@ -8,7 +8,13 @@ import {
 import type { TabNavigation, TabScreenOptions } from '../core/types';
 export type TabNavigatorOptions = Pick<
   SelectionNavigatorProps,
-  'id' | 'initialRouteName' | 'screenOptions' | 'style'
+  | 'id'
+  | 'initialRouteName'
+  | 'screenOptions'
+  | 'style'
+  | 'barStyle'
+  | 'barContentStyle'
+  | 'contentStyle'
 >;
 export function createTabNavigator<P extends ParamListBase = ParamListBase>() {
   function Screen<N extends RouteName<P>>(

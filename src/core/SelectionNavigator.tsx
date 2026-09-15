@@ -7,6 +7,7 @@ import {
   StyleSheet,
   type StyleProp,
   type ViewStyle,
+  type TextStyle,
 } from 'react-native';
 import { type SelectionNavigationState } from '../routers';
 import {
@@ -15,6 +16,7 @@ import {
   NavigatorStateContext,
   type Definition,
 } from './builder';
+import { NavigationItem, navigationItemStyle } from './NavigationItem';
 import { Scene } from './Scene';
 import { createNavigation } from './navigation';
 import { PlatformContext, useNavigationTheme } from './context';
@@ -31,6 +33,17 @@ export interface SelectionNavigatorProps {
   initialRouteName?: string;
   screenOptions?: SidebarScreenOptions;
   style?: StyleProp<ViewStyle>;
+  barStyle?: StyleProp<ViewStyle>;
+  barContentStyle?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
+  sectionStyle?: StyleProp<ViewStyle>;
+  sectionTitleStyle?: StyleProp<TextStyle>;
+  collapseButtonStyle?: StyleProp<ViewStyle>;
+  collapseLabelStyle?: StyleProp<TextStyle>;
+  renderCollapseButtonContent?: (props: {
+    collapsed: boolean;
+    children: React.ReactNode;
+  }) => React.ReactNode;
   position?: 'left' | 'right';
   width?: number;
   minWidth?: number;
@@ -92,8 +105,9 @@ export function SelectionNavigator({
       if (next) navigation.select(next.route.name);
     }
   });
-  const enabled = items.filter((i) => !i.options.hidden && !i.options.disabled);
-  const [focusedKey, setFocusedKey] = React.useState(state.activeRouteKey);
+  const visibleItems = items.filter((i) => !i.options.hidden);
+  const enabled = visibleItems.filter((i) => !i.options.disabled);
+  const [focusedKey, setFocusedKey] = React.useState('');
   const refs = React.useRef(new Map<string, FocusTarget>());
   const sidebar = type === 'sidebar';
   const collapsed = sidebar && state.collapsed;
@@ -112,6 +126,11 @@ export function SelectionNavigator({
         ...platform.keyboardShortcuts.nextTab,
         ...platform.keyboardShortcuts.previousTab,
       ];
+  const collapseContent = (
+    <Text style={[{ color: colors.text }, props.collapseLabelStyle]}>
+      {collapsed ? '»' : '«'}
+    </Text>
+  );
   const rail = (
     <DesktopView
       accessibilityRole={sidebar ? 'menu' : 'tablist'}
@@ -125,7 +144,9 @@ export function SelectionNavigator({
         )
           return;
         store.setFocusedNode(id);
-        const index = enabled.findIndex((i) => i.route.key === focusedKey);
+        const index = enabled.findIndex(
+          (i) => i.route.key === (focusedKey || state.activeRouteKey),
+        );
         const key = event.nativeEvent.key;
         if (
           !sidebar &&
@@ -147,7 +168,9 @@ export function SelectionNavigator({
         else if (key === 'Home') focusItem(0);
         else if (key === 'End') focusItem(enabled.length - 1);
         else if (key === 'Enter') {
-          const item = enabled.find((i) => i.route.key === focusedKey);
+          const item = enabled.find(
+            (i) => i.route.key === (focusedKey || state.activeRouteKey),
+          );
           if (item) navigation.select(item.route.name);
         }
         consumeKey(event);
@@ -165,94 +188,76 @@ export function SelectionNavigator({
                       props.width ?? platform.sidebar.defaultWidth,
                     ),
                   ),
-              borderRightWidth: StyleSheet.hairlineWidth,
+              ...(props.position === 'right'
+                ? { borderLeftWidth: StyleSheet.hairlineWidth }
+                : { borderRightWidth: StyleSheet.hairlineWidth }),
             }
           : { borderBottomWidth: StyleSheet.hairlineWidth },
+        props.barStyle,
       ]}
     >
       <ScrollView
         horizontal={!sidebar}
-        contentContainerStyle={!sidebar ? styles.tabItems : undefined}
+        contentContainerStyle={[
+          !sidebar && styles.tabItems,
+          props.barContentStyle,
+        ]}
       >
-        {items.map((item, index) => {
-          if (item.options.hidden) return null;
+        {visibleItems.map((item, index) => {
           const { route, options, definition } = item;
           const selected = route.key === state.activeRouteKey;
           const section = definition.section;
-          const label = options.label ?? options.title ?? route.name;
+
           return (
             <React.Fragment key={route.key}>
               {sidebar &&
                 !collapsed &&
                 section?.title &&
-                items[index - 1]?.definition.section?.key !== section.key && (
-                  <Text
-                    accessibilityRole="header"
-                    style={[styles.section, { color: colors.mutedText }]}
-                  >
-                    {section.title}
-                  </Text>
+                visibleItems[index - 1]?.definition.section?.key !==
+                  section.key && (
+                  <View style={[props.sectionStyle, section.style]}>
+                    {section.renderTitle ? (
+                      section.renderTitle({ title: section.title })
+                    ) : (
+                      <Text
+                        accessibilityRole="header"
+                        style={[
+                          styles.section,
+                          { color: colors.mutedText },
+                          props.sectionTitleStyle,
+                          section.titleStyle,
+                        ]}
+                      >
+                        {section.title}
+                      </Text>
+                    )}
+                  </View>
                 )}
-              <Pressable
-                ref={(value) => {
-                  if (value)
-                    refs.current.set(
-                      route.key,
-                      value as unknown as FocusTarget,
-                    );
+              <NavigationItem
+                route={route}
+                options={options}
+                selected={selected}
+                focused={focusedKey === route.key}
+                collapsed={collapsed}
+                sidebar={sidebar}
+                itemRef={(value) => {
+                  if (value) refs.current.set(route.key, value);
                   else refs.current.delete(route.key);
                 }}
-                accessible
-                focusable={!options.disabled}
-                disabled={options.disabled}
-                accessibilityRole={sidebar ? 'menuitem' : 'tab'}
-                accessibilityLabel={label}
-                accessibilityState={{ selected, disabled: !!options.disabled }}
                 onFocus={() => {
                   setFocusedKey(route.key);
                   store.setFocusedNode(id);
                 }}
+                onBlur={() =>
+                  setFocusedKey((current) =>
+                    current === route.key ? '' : current,
+                  )
+                }
                 onPress={() => {
                   store.setFocusedNode(id);
                   navigation.select(route.name);
                 }}
-                style={[
-                  styles.item,
-                  {
-                    opacity: options.disabled ? 0.45 : 1,
-                    backgroundColor: selected
-                      ? colors.selectedBackground
-                      : 'transparent',
-                    borderColor:
-                      focusedKey === route.key ? colors.accent : 'transparent',
-                  },
-                ]}
-              >
-                {typeof options.icon === 'function'
-                  ? options.icon({
-                      focused: selected,
-                      disabled: !!options.disabled,
-                    })
-                  : options.icon}
-                {(!collapsed || !options.icon) && (
-                  <Text
-                    numberOfLines={1}
-                    style={{ color: colors.text, flexShrink: 1 }}
-                  >
-                    {collapsed ? label.slice(0, 1) : label}
-                  </Text>
-                )}
-                {!collapsed &&
-                  options.badge != null &&
-                  (typeof options.badge === 'string' ||
-                  typeof options.badge === 'number' ? (
-                    <Text style={{ color: colors.mutedText }}>
-                      {options.badge}
-                    </Text>
-                  ) : (
-                    options.badge
-                  ))}
-              </Pressable>
+              />
             </React.Fragment>
           );
         })}
@@ -264,9 +269,14 @@ export function SelectionNavigator({
           accessibilityRole="button"
           accessibilityLabel={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           onPress={() => navigation.toggleSidebar()}
-          style={styles.item}
+          style={[navigationItemStyle, props.collapseButtonStyle]}
         >
-          <Text style={{ color: colors.text }}>{collapsed ? '»' : '«'}</Text>
+          {props.renderCollapseButtonContent
+            ? props.renderCollapseButtonContent({
+                collapsed,
+                children: collapseContent,
+              })
+            : collapseContent}
         </Pressable>
       )}
     </DesktopView>
@@ -283,7 +293,7 @@ export function SelectionNavigator({
         ]}
       >
         {rail}
-        <View style={styles.content}>
+        <View style={[styles.content, props.contentStyle]}>
           {items.map(({ route, definition, options }) => (
             <Scene
               key={route.key}
@@ -307,14 +317,5 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1, minWidth: 0 },
   tabItems: { flexDirection: 'row' },
-  item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    margin: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-  },
   section: { padding: 10, fontSize: 12, fontWeight: '600' },
 });

@@ -64,30 +64,43 @@ export function StackHeader(props: HeaderProps) {
       style={[
         styles.header,
         { backgroundColor: colors.surface, borderColor: colors.border },
+        options.headerStyle,
       ]}
     >
-      <View style={styles.action}>
+      <View style={[styles.action, options.headerLeftContainerStyle]}>
         {options.headerLeft !== undefined
           ? renderAction(options.headerLeft, props)
           : canGoBack && (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Back"
+                accessibilityLabel={options.headerBackTitle ?? 'Back'}
+                style={options.headerBackButtonStyle}
                 focusable
                 onPress={() => navigation.goBack()}
               >
-                <Text style={{ color: colors.accent }}>‹ Back</Text>
+                <Text
+                  style={[
+                    { color: options.headerTintColor ?? colors.accent },
+                    options.headerBackTitleStyle,
+                  ]}
+                >
+                  ‹ {options.headerBackTitle ?? 'Back'}
+                </Text>
               </Pressable>
             )}
       </View>
       <Text
         accessibilityRole="header"
         numberOfLines={1}
-        style={[styles.title, { color: colors.text }]}
+        style={[
+          styles.title,
+          { color: options.headerTintColor ?? colors.text },
+          options.headerTitleStyle,
+        ]}
       >
         {options.title ?? route.name}
       </Text>
-      <View style={styles.action}>
+      <View style={[styles.action, options.headerRightContainerStyle]}>
         {renderAction(options.headerRight, props)}
       </View>
     </View>
@@ -164,6 +177,8 @@ export function createStackNavigator<
               visible={index >= visibleStart}
               options={options}
               animation={options.animation ?? 'default'}
+              overlayStyle={options.overlayStyle}
+              dialogStyle={options.dialogStyle}
               overlay={
                 options.presentation === 'card'
                   ? undefined

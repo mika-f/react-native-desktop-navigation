@@ -18,11 +18,26 @@ export interface SplitColumnProps {
   maxWidth?: number;
   defaultWidth?: number;
   collapsible?: boolean;
+  style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
+  dividerStyle?: SplitDividerStyle;
+  renderDivider?: (props: SplitDividerRenderProps) => React.ReactNode;
 }
+export interface SplitDividerRenderProps {
+  columnId: string;
+  width: number;
+  dragging: boolean;
+}
+export type SplitDividerStyle =
+  | StyleProp<ViewStyle>
+  | ((props: SplitDividerRenderProps) => StyleProp<ViewStyle>);
 export interface SplitNavigatorProps {
   children: React.ReactNode;
   id?: string;
   style?: StyleProp<ViewStyle>;
+  columnStyle?: StyleProp<ViewStyle>;
+  dividerStyle?: SplitDividerStyle;
+  renderDivider?: (props: SplitDividerRenderProps) => React.ReactNode;
   layout?: (size: { width: number; height: number }) => string[];
   onColumnResize?: (id: string, width: number) => void;
 }
@@ -30,11 +45,16 @@ function Divider({
   column,
   width,
   resize,
+  style,
+  renderContent,
 }: {
   column: SplitColumnProps;
   width: number;
   resize: (width: number) => void;
+  style?: SplitDividerStyle;
+  renderContent?: (props: SplitDividerRenderProps) => React.ReactNode;
 }) {
+  const [dragging, setDragging] = React.useState(false);
   const start = React.useRef(width);
   const latest = React.useRef({ width, resize });
   latest.current = { width, resize };
@@ -45,14 +65,18 @@ function Divider({
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: () => {
           start.current = latest.current.width;
+          setDragging(true);
         },
         onPanResponderMove: (_, gesture) =>
           latest.current.resize(start.current + gesture.dx),
+        onPanResponderRelease: () => setDragging(false),
+        onPanResponderTerminate: () => setDragging(false),
         onPanResponderTerminationRequest: () => false,
       }),
     [],
   );
   const { colors } = useNavigationTheme();
+  const context = { columnId: column.id, width, dragging };
   return (
     <DesktopView
       {...responder.panHandlers}
@@ -82,8 +106,16 @@ function Divider({
           consumeKey(event);
         }
       }}
-      style={{ width: 6, backgroundColor: colors.border }}
-    />
+      style={[
+        { width: 6, backgroundColor: colors.border },
+        typeof style === 'function' ? style(context) : style,
+        typeof column.dividerStyle === 'function'
+          ? column.dividerStyle(context)
+          : column.dividerStyle,
+      ]}
+    >
+      {(column.renderDivider ?? renderContent)?.(context)}
+    </DesktopView>
   );
 }
 export function createSplitNavigator() {
@@ -162,6 +194,8 @@ export function createSplitNavigator() {
                 <View
                   testID={`split-column-${columnId}`}
                   style={[
+                    props.columnStyle,
+                    column.style,
                     {
                       width: state.widths[columnId],
                       minWidth: column.minWidth ?? 100,
@@ -180,6 +214,7 @@ export function createSplitNavigator() {
                     options={{
                       inactiveBehavior: 'keep',
                       focusBehavior: 'none',
+                      contentStyle: column.contentStyle,
                     }}
                   />
                 </View>
@@ -188,6 +223,8 @@ export function createSplitNavigator() {
                     column={column}
                     width={state.widths[columnId]}
                     resize={resize}
+                    style={props.dividerStyle}
+                    renderContent={props.renderDivider}
                   />
                 )}
               </React.Fragment>

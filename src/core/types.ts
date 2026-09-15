@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { StyleProp, ViewStyle, TextStyle } from 'react-native';
 import type {
   ParamListBase,
   RouteName,
@@ -64,6 +64,7 @@ export interface CommonScreenOptions {
   focusBehavior?: FocusBehavior;
   inactiveBehavior?: 'keep' | 'unmount';
   contentStyle?: StyleProp<ViewStyle>;
+  sceneStyle?: StyleProp<ViewStyle>;
 }
 export interface HeaderActionProps {
   navigation: StackNavigation;
@@ -81,6 +82,16 @@ export type StackAnimation =
   | 'slide-vertical';
 export interface StackScreenOptions extends CommonScreenOptions {
   headerShown?: boolean;
+  headerStyle?: StyleProp<ViewStyle>;
+  headerTitleStyle?: StyleProp<TextStyle>;
+  headerLeftContainerStyle?: StyleProp<ViewStyle>;
+  headerRightContainerStyle?: StyleProp<ViewStyle>;
+  headerBackButtonStyle?: StyleProp<ViewStyle>;
+  headerBackTitleStyle?: StyleProp<TextStyle>;
+  headerBackTitle?: string;
+  headerTintColor?: string;
+  overlayStyle?: StyleProp<ViewStyle>;
+  dialogStyle?: StyleProp<ViewStyle>;
   header?: React.ReactNode | ((props: HeaderProps) => React.ReactNode);
   headerLeft?:
     | React.ReactNode
@@ -91,7 +102,36 @@ export interface StackScreenOptions extends CommonScreenOptions {
   animation?: StackAnimation;
   presentation?: 'card' | 'modal' | 'dialog';
 }
+export interface NavigationItemState {
+  selected: boolean;
+  /** Keyboard/native focus, independent of selection. */
+  focused: boolean;
+  pressed: boolean;
+  hovered: boolean;
+  disabled: boolean;
+  collapsed: boolean;
+}
+export type NavigationItemStyle<T extends ViewStyle | TextStyle> =
+  | StyleProp<T>
+  | ((state: NavigationItemState) => StyleProp<T>);
+export interface NavigationItemContentProps extends NavigationItemState {
+  route: NavigationRoute;
+  label: string;
+  /** Default icon, label, and badge, with their configured styles. */
+  children: React.ReactNode;
+}
+export interface SidebarSectionOptions {
+  title?: string;
+  style?: StyleProp<ViewStyle>;
+  titleStyle?: StyleProp<TextStyle>;
+  renderTitle?: (props: { title: string }) => React.ReactNode;
+}
 export interface SidebarScreenOptions extends CommonScreenOptions {
+  itemStyle?: NavigationItemStyle<ViewStyle>;
+  labelStyle?: NavigationItemStyle<TextStyle>;
+  iconContainerStyle?: NavigationItemStyle<ViewStyle>;
+  badgeStyle?: NavigationItemStyle<TextStyle>;
+  renderItemContent?: (props: NavigationItemContentProps) => React.ReactNode;
   label?: string;
   icon?:
     | React.ReactNode

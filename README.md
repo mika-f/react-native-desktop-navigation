@@ -198,6 +198,93 @@ Container の mount 前・unmount 後の ref 操作は no-op です。`initialSt
 
 `theme` は `NavigationTheme` を受け取り、`DefaultTheme` / `useNavigationTheme` を公開しています。
 
+## コンポーネントのデザインをカスタマイズする
+
+全体の配色は Container の `theme`、各部位の形状・余白・文字は次の props / options で指定できます。`StyleSheet.create` の値、配列、通常の React Native `StyleProp` を受け付けます。
+
+| 対象                       | カスタマイズ API                                                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Container / Navigator 全体 | `style`（Container は `theme` も利用可能）                                                                                  |
+| Screen                     | `screenOptions` / Screen `options` の `sceneStyle`（外枠）、`contentStyle`（画面内容）                                      |
+| Stack Header               | `headerStyle`、`headerTitleStyle`、`headerTintColor`                                                                        |
+| Header 左右・Back          | `headerLeftContainerStyle`、`headerRightContainerStyle`、`headerBackButtonStyle`、`headerBackTitleStyle`、`headerBackTitle` |
+| Modal / Dialog             | Stack options の `overlayStyle`（背景）、`dialogStyle`（ダイアログ面）                                                      |
+| Sidebar / Tabs のバー      | Navigator の `barStyle`、`barContentStyle`（スクロール領域内）、`contentStyle`（画面領域の外枠）                            |
+| Sidebar / Tabs の項目      | Screen options の `itemStyle`、`labelStyle`、`iconContainerStyle`、`badgeStyle`、`renderItemContent`                        |
+| Sidebar Section 見出し     | Navigator の `sectionStyle` / `sectionTitleStyle`、Section の `style` / `titleStyle` / `renderTitle`                        |
+| Sidebar 開閉ボタン         | Navigator の `collapseButtonStyle`、`collapseLabelStyle`、`renderCollapseButtonContent`                                     |
+| Split 列                   | Navigator の `columnStyle`、Column の `style` / `contentStyle`                                                              |
+| Split 境界                 | Navigator / Column の `dividerStyle`、`renderDivider`                                                                       |
+
+`screenOptions` は各 Screen の既定値です。同じ option を Screen の `options` に指定すると、その option を置き換えます。既定の内部スタイルの後に指定スタイルを適用します。ただし、非表示 Scene の `display: none` と、Split の列幅・min/max・表示状態、および transition 中の `opacity` / `transform` は Navigation 側の制御を優先します。列幅は `defaultWidth` / `minWidth` / `maxWidth` とリサイズ操作で指定してください。
+
+### 選択・フォーカス・ホバー・押下時のデザイン
+
+```tsx
+<Sidebar.Navigator
+  barStyle={{ backgroundColor: '#201a2b', borderRightWidth: 0 }}
+  barContentStyle={{ padding: 8 }}
+  screenOptions={{
+    itemStyle: ({ selected, focused, hovered, pressed, disabled }) => ({
+      backgroundColor: pressed
+        ? '#68458c'
+        : selected
+          ? '#493265'
+          : hovered
+            ? '#30253e'
+            : 'transparent',
+      borderColor: focused ? '#c4a0ff' : 'transparent',
+      opacity: disabled ? 0.4 : 1,
+      borderRadius: 10,
+    }),
+    labelStyle: ({ selected }) => ({
+      color: '#fff',
+      fontWeight: selected ? '700' : '400',
+    }),
+    badgeStyle: { color: '#ddc9ff', paddingHorizontal: 6 },
+  }}
+>
+  {/* Sidebar.Screen / Sidebar.Section */}
+</Sidebar.Navigator>
+```
+
+項目の4つの style option は静的スタイルのほか、`NavigationItemState` を受け取る関数に対応します。状態は `selected`、`focused`、`hovered`、`pressed`、`disabled`、`collapsed` です。`selected` は現在の画面、`focused` は項目への native / keyboard focus を示します。既存の `icon({ focused })` の `focused` は従来どおり選択状態です。`badgeStyle` は文字列・数値のバッジ用で、ReactNode のバッジはその Node 自体をスタイリングします。
+
+### 項目や境界の中身を差し替える
+
+```tsx
+<Sidebar.Screen
+  name="Albums"
+  component={Albums}
+  options={{
+    renderItemContent: ({ label, selected, collapsed, children }) => (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ width: 3, height: 20, backgroundColor: selected ? '#c4a0ff' : 'transparent' }} />
+        {children}
+        {!collapsed && <Text accessibilityElementsHidden>{label.length}</Text>}
+      </View>
+    ),
+  }}
+/>
+
+<Split.Navigator
+  dividerStyle={({ dragging }) => ({ width: 12, backgroundColor: dragging ? '#493265' : '#222' })}
+  renderDivider={({ columnId, width, dragging }) => (
+    <View style={{ width: 3, height: 40, backgroundColor: dragging ? '#c4a0ff' : '#555' }} />
+  )}
+>
+  {/* Split.Column */}
+</Split.Navigator>
+```
+
+`renderItemContent` の `children` はスタイル適用済みの標準 icon / label / badge です。全体を差し替えることもできます。外側の Pressable はライブラリが管理するため、クリック・キー選択・disabled・accessibility label と selection は引き継がれます。戻り値には表示用 Node を置き、入れ子のボタンなど独立した操作要素を置かないでください。
+
+`renderCollapseButtonContent` も標準 `children` と `collapsed` を受け取ります。`renderDivider` は `columnId`、列の現在幅 `width`、`dragging` を受け取り、外側の resize / keyboard / accessibility 処理を保持します。Column に指定した renderer は Navigator の renderer より優先され、divider styles は Navigator → Column の順で適用します。
+
+Header 全体は既存の `header`、左右の内容は `headerLeft` / `headerRight` でも差し替えられます。これらを完全に置き換える場合、独自の描画・操作・アクセシビリティ属性は renderer 側で実装します。Dialog の既定背景色は `theme.colors.surface` です。
+
+設定した style や renderer は Navigation State の JSON に保存されません。実行可能な使用例は [Customization.tsx](examples/desktop/Customization.tsx) を参照してください。
+
 ## 検証と互換性
 
 peerDependencies は React `>=18` / React Native `>=0.78` です。これはインストール可能な範囲で、全組合せの native 動作保証ではありません。

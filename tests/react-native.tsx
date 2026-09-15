@@ -58,6 +58,8 @@ export const PanResponder = {
     panHandlers: {
       onStartShouldSetResponder: config.onStartShouldSetPanResponder,
       onResponderGrant: config.onPanResponderGrant,
+      onResponderRelease: config.onPanResponderRelease,
+      onResponderTerminate: config.onPanResponderTerminate,
       onResponderMove: (event: any) =>
         config.onPanResponderMove(event, event.nativeEvent),
     },

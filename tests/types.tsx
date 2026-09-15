@@ -62,3 +62,40 @@ export const typed = (
     />
   </>
 );
+
+const customItemStyle: import('../src').NavigationItemStyle<
+  import('react-native').ViewStyle
+> = ({ selected, focused, hovered, pressed, disabled, collapsed }) => ({
+  opacity: disabled ? 0.3 : 1,
+  borderWidth: focused ? 2 : 1,
+  padding: collapsed ? 4 : 12,
+  backgroundColor: pressed
+    ? '#444'
+    : selected
+      ? '#333'
+      : hovered
+        ? '#222'
+        : '#111',
+});
+export const customDesign = (
+  <Sidebar.Navigator
+    screenOptions={{
+      itemStyle: customItemStyle,
+      renderItemContent: ({ children }) => children,
+    }}
+    barStyle={{ padding: 4 }}
+    sectionTitleStyle={{ fontSize: 16 }}
+  >
+    <Sidebar.Section title="Group" renderTitle={({ title }) => <>{title}</>}>
+      <Sidebar.Screen name="Home" component={() => null} />
+    </Sidebar.Section>
+  </Sidebar.Navigator>
+);
+// @ts-expect-error callbacks must return a valid ViewStyle
+const badItemStyle: import('../src').NavigationItemStyle<
+  import('react-native').ViewStyle
+> = () => ({ padding: true });
+const badHeader: import('../src').StackScreenOptions = {
+  // @ts-expect-error text style values retain native types
+  headerTitleStyle: { fontSize: 'huge' },
+};

@@ -8,6 +8,7 @@ import {
   type RouteName,
   type NavigationRoute,
 } from '../routers';
+import type { SidebarSectionOptions } from './types';
 import { ScopeContext, useStore } from './context';
 import { createNavigation, type AnyNavigation } from './navigation';
 export const NavigatorStateContext =
@@ -35,7 +36,7 @@ export interface Definition<O> {
   options?:
     | O
     | ((context: { navigation: AnyNavigation; route: NavigationRoute }) => O);
-  section?: { key: string; title?: string };
+  section?: SidebarSectionOptions & { key: string };
 }
 export function readScreens<O>(
   children: React.ReactNode,
@@ -52,13 +53,15 @@ export function readScreens<O>(
       }
       const props = child.props as {
         children?: React.ReactNode;
-        title?: string;
-      };
+      } & SidebarSectionOptions;
       if (child.type === React.Fragment) visit(props.children, section);
       else if (Section && child.type === Section)
         visit(props.children, {
           key: String(child.key ?? result.length),
           title: props.title,
+          style: props.style,
+          titleStyle: props.titleStyle,
+          renderTitle: props.renderTitle,
         });
       else if (child.type === Screen)
         result.push({ ...(child.props as Definition<O>), section });

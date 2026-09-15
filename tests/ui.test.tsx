@@ -6,7 +6,7 @@ import {
   type ReactTestInstance,
 } from 'react-test-renderer';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Pressable, Text, StyleSheet } from 'react-native';
+import { Pressable, Text, View, StyleSheet } from 'react-native';
 import { nativeFocus } from './react-native';
 import {
   NavigationContainer,
@@ -38,6 +38,12 @@ afterEach(() => {
 });
 const native = (name: string) =>
   renderer.root.findAll((node) => node.type === name);
+function parentView(node: ReactTestInstance) {
+  let parent = node.parent;
+  while (parent && String(parent.type) !== 'View') parent = parent.parent;
+  if (!parent) throw new Error('Expected a native parent View');
+  return parent;
+}
 const button = (label: string) =>
   native('Pressable').find((n) => n.props.accessibilityLabel === label)!;
 const click = (label: string) => act(() => button(label).props.onPress());
@@ -555,4 +561,310 @@ it('updates a newly mounted nested header when only the parent can go back', () 
   expect(button('Back')).toBeDefined();
   click('Back');
   expect(nav.canGoBack()).toBe(false);
+});
+
+it('customizes Stack header parts, scene visibility, and themed dialog surfaces', () => {
+  const nav = ref();
+  render(
+    <NavigationContainer
+      ref={nav}
+      theme={{
+        dark: true,
+        colors: {
+          background: '#101010',
+          surface: '#202020',
+          text: '#ffffff',
+          mutedText: '#aaa',
+          border: '#555',
+          accent: '#0ff',
+          selectedBackground: '#333',
+        },
+      }}
+    >
+      <Stack.Navigator
+        screenOptions={{
+          animation: 'none',
+          headerStyle: { height: 72, backgroundColor: '#123456' },
+          headerTitleStyle: { fontSize: 24 },
+          headerLeftContainerStyle: { paddingLeft: 20 },
+          headerRightContainerStyle: { paddingRight: 22 },
+          headerTintColor: '#abcdef',
+          headerBackTitle: '戻る',
+          headerBackTitleStyle: { fontWeight: '900' },
+          headerBackButtonStyle: { padding: 12 },
+          sceneStyle: { display: 'flex', padding: 4 },
+        }}
+      >
+        <Stack.Screen name="Home" component={() => null} />
+        <Stack.Screen
+          name="Post"
+          component={Post}
+          options={{
+            presentation: 'dialog',
+            overlayStyle: { backgroundColor: '#0009', padding: 40 },
+            dialogStyle: { borderRadius: 20, maxWidth: 480 },
+          }}
+        />
+        <Stack.Screen name="Profile" component={() => null} />
+      </Stack.Navigator>
+    </NavigationContainer>,
+  );
+  act(() => nav.navigate('Post', { id: 'design' }));
+  const back = button('戻る');
+  expect(StyleSheet.flatten(back.props.style).padding).toBe(12);
+  const backText = back.findAll((n) => String(n.type) === 'Text')[0];
+  expect(StyleSheet.flatten(backText.props.style)).toMatchObject({
+    color: '#abcdef',
+    fontWeight: '900',
+  });
+  const title = native('Text').find(
+    (n) =>
+      n.props.accessibilityRole === 'header' && n.props.children === 'Post',
+  )!;
+  expect(StyleSheet.flatten(title.props.style)).toMatchObject({
+    color: '#abcdef',
+    fontSize: 24,
+  });
+  expect(StyleSheet.flatten(parentView(title).props.style)).toMatchObject({
+    backgroundColor: '#123456',
+    height: 72,
+  });
+  const scene = native('View').find((n) => n.props.testID === 'scene-Post')!;
+  expect(StyleSheet.flatten(scene.props.style)).toMatchObject({
+    backgroundColor: '#0009',
+    padding: 40,
+  });
+  const dialog = scene.findAll((n) => String(n.type) === 'AnimatedView')[0];
+  expect(StyleSheet.flatten(dialog.props.style)).toMatchObject({
+    backgroundColor: '#202020',
+    borderRadius: 20,
+    maxWidth: 480,
+  });
+  click('戻る');
+  expect(nav.canGoBack()).toBe(false);
+  act(() => nav.navigate('Profile', { userId: '1' }));
+  expect(
+    StyleSheet.flatten(
+      native('View').find((n) => n.props.testID === 'scene-Home')!.props.style,
+    ).display,
+  ).toBe('none');
+});
+
+it.each(['sidebar', 'tabs'] as const)(
+  'keeps custom %s items interactive and exposes selection, focus, hover, press, and disabled state',
+  (type) => {
+    const Factory =
+      type === 'sidebar' ? createSidebarNavigator : createTabNavigator;
+    const Navigator = Factory<{
+      A: undefined;
+      B: undefined;
+      Disabled: undefined;
+    }>();
+    const seen = vi.fn();
+    render(
+      <NavigationContainer>
+        <Navigator.Navigator
+          barStyle={{ backgroundColor: '#234567', padding: 7 }}
+          barContentStyle={{ gap: 15 }}
+          contentStyle={{ padding: 30 }}
+          screenOptions={{
+            itemStyle: (state) => ({
+              backgroundColor: state.pressed
+                ? '#pressed'
+                : state.selected
+                  ? '#selected'
+                  : '#idle',
+              borderColor: state.focused ? '#focused' : '#blurred',
+              padding: state.hovered ? 21 : 12,
+              opacity: state.disabled ? 0.2 : 1,
+            }),
+            labelStyle: ({ selected }) => ({ fontSize: selected ? 22 : 16 }),
+            badgeStyle: { color: '#badge' },
+            iconContainerStyle: { marginRight: 9 },
+            renderItemContent: (props) => {
+              seen(props);
+              return (
+                <View testID={`custom-${props.route.name}`}>
+                  {props.children}
+                </View>
+              );
+            },
+          }}
+        >
+          <Navigator.Screen
+            name="A"
+            component={() => null}
+            options={{ badge: 8, icon: <Text>Icon</Text> }}
+          />
+          <Navigator.Screen name="B" component={() => null} />
+          <Navigator.Screen
+            name="Disabled"
+            component={() => null}
+            options={{ disabled: true }}
+          />
+        </Navigator.Navigator>
+      </NavigationContainer>,
+    );
+    expect(StyleSheet.flatten(button('A').props.style)).toMatchObject({
+      backgroundColor: '#selected',
+      borderColor: '#blurred',
+    });
+    expect(
+      button('A')
+        .findAll((n) => String(n.type) === 'Text' && n.props.children === 'A')
+        .map((n) => StyleSheet.flatten(n.props.style).fontSize),
+    ).toEqual([22]);
+    expect(
+      button('A')
+        .findAll((n) => String(n.type) === 'Text' && n.props.children === 8)
+        .map((n) => StyleSheet.flatten(n.props.style).color),
+    ).toEqual(['#badge']);
+    act(() => button('B').props.onFocus());
+    expect(StyleSheet.flatten(button('B').props.style).borderColor).toBe(
+      '#focused',
+    );
+    act(() => button('B').props.onHoverIn());
+    expect(StyleSheet.flatten(button('B').props.style).padding).toBe(21);
+    act(() => button('B').props.onPressIn());
+    expect(StyleSheet.flatten(button('B').props.style).backgroundColor).toBe(
+      '#pressed',
+    );
+    act(() => button('B').props.onPressOut());
+    click('B');
+    expect(button('B').props.accessibilityState.selected).toBe(true);
+    expect(StyleSheet.flatten(button('Disabled').props.style).opacity).toBe(
+      0.2,
+    );
+    expect(button('Disabled').props.disabled).toBe(true);
+    const rail = native('View').find(
+      (n) =>
+        n.props.accessibilityRole === (type === 'sidebar' ? 'menu' : 'tablist'),
+    )!;
+    expect(StyleSheet.flatten(rail.props.style)).toMatchObject({
+      padding: 7,
+      backgroundColor: '#234567',
+    });
+    key(rail, 'Home');
+    key(rail, 'Enter');
+    expect(button('A').props.accessibilityState.selected).toBe(true);
+    expect(seen).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'B', selected: true, focused: true }),
+    );
+  },
+);
+
+it('customizes Sidebar sections and collapse content while retaining its accessible button', () => {
+  const Sidebar = createSidebarNavigator<{ Hidden: undefined; A: undefined }>();
+  render(
+    <NavigationContainer>
+      <Sidebar.Navigator
+        sectionStyle={{ marginTop: 14 }}
+        sectionTitleStyle={{ fontSize: 18 }}
+        collapseButtonStyle={{ padding: 20 }}
+        collapseLabelStyle={{ color: '#abc' }}
+        renderCollapseButtonContent={({ collapsed, children }) => (
+          <View testID={collapsed ? 'expand-content' : 'collapse-content'}>
+            {children}
+          </View>
+        )}
+      >
+        <Sidebar.Section
+          title="Library"
+          style={{ padding: 8 }}
+          titleStyle={{ color: '#def' }}
+        >
+          <Sidebar.Screen
+            name="Hidden"
+            component={() => null}
+            options={{ hidden: true }}
+          />
+          <Sidebar.Screen name="A" component={() => null} />
+        </Sidebar.Section>
+      </Sidebar.Navigator>
+    </NavigationContainer>,
+  );
+  const title = native('Text').find((n) => n.props.children === 'Library')!;
+  expect(StyleSheet.flatten(title.props.style)).toMatchObject({
+    fontSize: 18,
+    color: '#def',
+  });
+  expect(StyleSheet.flatten(parentView(title).props.style)).toMatchObject({
+    marginTop: 14,
+    padding: 8,
+  });
+  expect(
+    StyleSheet.flatten(button('Collapse sidebar').props.style).padding,
+  ).toBe(20);
+  click('Collapse sidebar');
+  expect(button('Expand sidebar').props.accessibilityRole).toBe('button');
+  expect(
+    native('View').find((n) => n.props.testID === 'expand-content'),
+  ).toBeDefined();
+});
+
+it('styles Split columns and custom resize handles without losing constraints, state, or serializability', () => {
+  const Split = createSplitNavigator();
+  const nav = createNavigationRef();
+  const mounts = vi.fn();
+  function Column() {
+    React.useEffect(() => {
+      mounts();
+    }, []);
+    return null;
+  }
+  render(
+    <NavigationContainer ref={nav}>
+      <Split.Navigator
+        columnStyle={{ padding: 5 }}
+        dividerStyle={({ dragging }) => ({
+          width: 14,
+          backgroundColor: dragging ? '#drag' : '#rest',
+        })}
+        renderDivider={({ width, dragging }) => (
+          <Text>{`${width}:${dragging}`}</Text>
+        )}
+      >
+        <Split.Column
+          id="left"
+          component={Column}
+          minWidth={180}
+          maxWidth={320}
+          style={{ width: 999, backgroundColor: '#column' }}
+          contentStyle={{ padding: 17 }}
+        />
+        <Split.Column id="right" component={() => null} />
+      </Split.Navigator>
+    </NavigationContainer>,
+  );
+  const divider = () =>
+    native('View').find((n) => n.props.testID === 'split-divider-left')!;
+  const column = () =>
+    native('View').find((n) => n.props.testID === 'split-column-left')!;
+  expect(StyleSheet.flatten(column().props.style)).toMatchObject({
+    width: 180,
+    backgroundColor: '#column',
+    padding: 5,
+  });
+  expect(StyleSheet.flatten(divider().props.style)).toMatchObject({
+    width: 14,
+    backgroundColor: '#rest',
+  });
+  act(() => divider().props.onResponderGrant({}));
+  expect(StyleSheet.flatten(divider().props.style).backgroundColor).toBe(
+    '#drag',
+  );
+  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 999 } }));
+  expect(divider().props.accessibilityValue.now).toBe(320);
+  expect(
+    divider().findAll((n) => String(n.type) === 'Text')[0].props.children,
+  ).toBe('320:true');
+  act(() => divider().props.onResponderRelease({}));
+  expect(StyleSheet.flatten(divider().props.style).backgroundColor).toBe(
+    '#rest',
+  );
+  expect(mounts).toHaveBeenCalledOnce();
+  const json = serializeNavigationState(nav.getRootState()!);
+  expect(JSON.parse(json).nodes.root.state.widths.left).toBe(320);
+  expect(json).not.toContain('#column');
+  expect(json).not.toContain('renderDivider');
 });

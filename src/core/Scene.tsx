@@ -1,5 +1,10 @@
 import React from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import {
+  Animated,
+  StyleSheet,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import type { NavigationRoute } from '../routers';
 import { DesktopView } from '../platform';
 import {
@@ -7,6 +12,7 @@ import {
   ScopeContext,
   ScreenContext,
   useStore,
+  useNavigationTheme,
 } from './context';
 import { createNavigation } from './navigation';
 import { FocusContext, type FocusRegistry, type FocusTarget } from './focus';
@@ -19,6 +25,8 @@ export interface SceneProps {
   options: CommonScreenOptions;
   animation?: StackAnimation;
   overlay?: 'modal' | 'dialog';
+  overlayStyle?: StyleProp<ViewStyle>;
+  dialogStyle?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
 }
 export function Scene({
@@ -29,9 +37,12 @@ export function Scene({
   options,
   animation = 'none',
   overlay,
+  overlayStyle,
+  dialogStyle,
   children,
 }: SceneProps) {
   const store = useStore();
+  const { colors } = useNavigationTheme();
   const platform = React.useContext(PlatformContext);
   const snapshot = React.useCallback(
     () => store.isRouteFocused(nodeId, route.key),
@@ -125,16 +136,22 @@ export function Scene({
             accessibilityViewIsModal={!!overlay && visible}
             style={[
               styles.scene,
-              !visible && styles.hidden,
+              options.sceneStyle,
               overlay && styles.overlay,
               overlay === 'dialog' && styles.dialogBackdrop,
+              overlay && overlayStyle,
+              !visible && styles.hidden,
             ]}
           >
             <Animated.View
               style={[
                 styles.content,
-                overlay === 'dialog' && styles.dialog,
+                overlay === 'dialog' && [
+                  styles.dialog,
+                  { backgroundColor: colors.surface },
+                ],
                 options.contentStyle,
+                overlay === 'dialog' && dialogStyle,
                 animatedStyle as never,
               ]}
             >
@@ -167,7 +184,6 @@ const styles = StyleSheet.create({
     maxWidth: 640,
     maxHeight: '90%',
     minHeight: 160,
-    backgroundColor: '#fff',
     borderRadius: 8,
     overflow: 'hidden',
   },

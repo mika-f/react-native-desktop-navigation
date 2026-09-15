@@ -44,3 +44,7 @@ NavigationContainer
 - Dialog を開閉する。OS native modal や完全な focus trap ではなく、アプリ内 overlay として表示される。
 
 自動テストはこれらの React / State / イベント配線を検証します。OS のイベント配送、mouse capture、accessibility bridge 自体はホストで確認する必要があります。
+
+## カスタムデザインの Example
+
+`Customization.tsx` を同じ手順でホストへコピーし、`App` の代わりに登録すると、ダークテーマの Header・Sidebar・Tabs・Split を確認できます。各部位のスタイル、選択 / focus / hover / press 状態、項目の描画差し替え、drag 中のリサイズハンドルを実装した例です。
