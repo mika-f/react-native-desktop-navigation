@@ -1,0 +1,59 @@
+{
+  "name": "@natsuneko-laboratory/react-native-desktop-navigation",
+  "version": "0.1.0",
+  "description": "Desktop-first navigation for React Native macOS and Windows",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "react-native": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "react-native": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./routers": {
+      "types": "./dist/routers/index.d.ts",
+      "default": "./dist/routers/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build",
+    "prepack": "npm run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.78"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-test-renderer": "^19.0.0",
+    "prettier": "^3.6.2",
+    "react": "19.1.0",
+    "react-native": "0.81.0",
+    "react-test-renderer": "19.1.0",
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mika-f/react-native-desktop-navigation.git"
+  },
+  "packageManager": "pnpm@12.4.2"
+}
