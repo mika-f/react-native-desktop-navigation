@@ -355,8 +355,8 @@ it('resizes Split by mouse drag and retains mounted state when columns hide and 
     native('View').find((n) => typeof n.props.onLayout === 'function')!;
   const divider = () =>
     native('View').find((n) => n.props.testID === 'split-divider-sidebar')!;
-  act(() => divider().props.onResponderGrant({}));
-  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 500 } }));
+  act(() => divider().props.onResponderGrant({ nativeEvent: { pageX: 180 } }));
+  act(() => divider().props.onResponderMove({ nativeEvent: { pageX: 680 } }));
   expect(resize).toHaveBeenLastCalledWith('sidebar', 320);
   act(() =>
     split().props.onLayout({
@@ -839,6 +839,8 @@ it('styles Split columns and custom resize handles without losing constraints, s
   );
   const divider = () =>
     native('View').find((n) => n.props.testID === 'split-divider-left')!;
+  const visual = () =>
+    native('View').find((n) => n.props.testID === 'split-divider-visual-left')!;
   const column = () =>
     native('View').find((n) => n.props.testID === 'split-column-left')!;
   expect(StyleSheet.flatten(column().props.style)).toMatchObject({
@@ -846,21 +848,21 @@ it('styles Split columns and custom resize handles without losing constraints, s
     backgroundColor: '#column',
     padding: 5,
   });
-  expect(StyleSheet.flatten(divider().props.style)).toMatchObject({
+  expect(StyleSheet.flatten(visual().props.style)).toMatchObject({
     width: 14,
     backgroundColor: '#rest',
   });
-  act(() => divider().props.onResponderGrant({}));
-  expect(StyleSheet.flatten(divider().props.style).backgroundColor).toBe(
+  act(() => divider().props.onResponderGrant({ nativeEvent: { pageX: 180 } }));
+  expect(StyleSheet.flatten(visual().props.style).backgroundColor).toBe(
     '#drag',
   );
-  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 999 } }));
+  act(() => divider().props.onResponderMove({ nativeEvent: { pageX: 1179 } }));
   expect(divider().props.accessibilityValue.now).toBe(320);
   expect(
     divider().findAll((n) => String(n.type) === 'Text')[0].props.children,
   ).toBe('320:true');
   act(() => divider().props.onResponderRelease({}));
-  expect(StyleSheet.flatten(divider().props.style).backgroundColor).toBe(
+  expect(StyleSheet.flatten(visual().props.style).backgroundColor).toBe(
     '#rest',
   );
   expect(mounts).toHaveBeenCalledOnce();
@@ -1039,11 +1041,13 @@ it('keeps the divider, both column widths, and a fill-width Sidebar synchronized
   );
   expect(widths()).toEqual([240, 754]);
   act(() =>
-    divider().props.onLayout({ nativeEvent: { layout: { width: 12 } } }),
+    native('View')
+      .find((n) => n.props.testID === 'split-divider-visual-menu')!
+      .props.onLayout({ nativeEvent: { layout: { width: 12 } } }),
   );
   expect(widths()).toEqual([240, 748]);
-  act(() => divider().props.onResponderGrant({}));
-  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 100 } }));
+  act(() => divider().props.onResponderGrant({ nativeEvent: { pageX: 240 } }));
+  act(() => divider().props.onResponderMove({ nativeEvent: { pageX: 340 } }));
   expect(widths()).toEqual([340, 648]);
   expect(divider().props.accessibilityValue.now).toBe(340);
   expect(resize.mock.calls).toEqual([
@@ -1056,7 +1060,7 @@ it('keeps the divider, both column widths, and a fill-width Sidebar synchronized
         .style,
     ),
   ).toMatchObject({ width: '100%', maxWidth: '100%' });
-  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 1000 } }));
+  act(() => divider().props.onResponderMove({ nativeEvent: { pageX: 1240 } }));
   expect(widths()).toEqual([668, 320]);
   act(() => divider().props.onResponderRelease({}));
   key(divider(), 'ArrowLeft');
@@ -1075,6 +1079,76 @@ it('keeps the divider, both column widths, and a fill-width Sidebar synchronized
   ).toEqual({ menu: 268, content: 320 });
   expect(mounted).toHaveBeenCalledOnce();
 });
+
+it.each([-7, 3, 13])(
+  'resizes one-to-one from a pointer starting %ipx from the visible divider edge',
+  (offset) => {
+    const Split = createSplitNavigator();
+    const resized = vi.fn();
+    render(
+      <NavigationContainer>
+        <Split.Navigator onColumnResize={resized}>
+          <Split.Column id="left" component={() => null} defaultWidth={240} />
+          <Split.Column id="right" component={() => null} />
+        </Split.Navigator>
+      </NavigationContainer>,
+    );
+    const divider = () =>
+      native('View').find((n) => n.props.testID === 'split-divider-left')!;
+    act(() =>
+      native('View')
+        .find((n) => n.props.testID === 'split-layout')!
+        .props.onLayout({
+          nativeEvent: { layout: { width: 1000, height: 600 } },
+        }),
+    );
+    const widths = () =>
+      ['left', 'right'].map(
+        (id) =>
+          StyleSheet.flatten(
+            native('View').find((n) => n.props.testID === `split-column-${id}`)!
+              .props.style,
+          ).width,
+      );
+    // Only one native view owns the gesture, including the visual's children.
+    expect(divider().props.pointerEvents).toBe('box-only');
+    expect(
+      native('View').filter((n) => n.props.onResponderMove != null),
+    ).toHaveLength(1);
+    const pageX = 400 + 240 + offset;
+    act(() => divider().props.onResponderGrant({ nativeEvent: { pageX } }));
+    expect(widths()).toEqual([240, 754]);
+    // Successive events and rerenders must not accumulate the displacement.
+    for (const delta of [10, 20, 20, -10, 0]) {
+      act(() =>
+        divider().props.onResponderMove({
+          nativeEvent: { pageX: pageX + delta },
+        }),
+      );
+      expect(widths()).toEqual([240 + delta, 754 - delta]);
+    }
+    expect(resized.mock.calls).toEqual([
+      ['left', 250],
+      ['right', 744],
+      ['left', 260],
+      ['right', 734],
+      ['left', 230],
+      ['right', 764],
+      ['left', 240],
+      ['right', 754],
+    ]);
+    act(() => divider().props.onResponderRelease({}));
+    // A subsequent drag must take a fresh pointer origin.
+    act(() =>
+      divider().props.onResponderGrant({ nativeEvent: { pageX: pageX + 5 } }),
+    );
+    act(() =>
+      divider().props.onResponderMove({ nativeEvent: { pageX: pageX + 15 } }),
+    );
+    expect(widths()).toEqual([250, 744]);
+    act(() => divider().props.onResponderTerminate({}));
+  },
+);
 
 it('reclaims hidden divider space and refits a responsive Split without losing a hidden column width', () => {
   const Split = createSplitNavigator();
@@ -1173,8 +1247,8 @@ it('moves Split boundaries on Sidebar collapse and restores the resized width af
     );
   render(tree());
   layout(1000);
-  act(() => divider().props.onResponderGrant({}));
-  act(() => divider().props.onResponderMove({ nativeEvent: { dx: 100 } }));
+  act(() => divider().props.onResponderGrant({ nativeEvent: { pageX: 240 } }));
+  act(() => divider().props.onResponderMove({ nativeEvent: { pageX: 340 } }));
   act(() => divider().props.onResponderRelease({}));
   expect(widths()).toEqual([340, 654]);
   const mountsBeforeCollapse = mounted.mock.calls.length;

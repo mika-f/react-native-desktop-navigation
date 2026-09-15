@@ -62,7 +62,7 @@ function Divider({
   onWidthChange: (width: number) => void;
 }) {
   const [dragging, setDragging] = React.useState(false);
-  const start = React.useRef(width);
+  const start = React.useRef({ width, pageX: 0 });
   const latest = React.useRef({ width, resize });
   latest.current = { width, resize };
   const responder = React.useMemo(
@@ -70,29 +70,18 @@ function Divider({
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          start.current = latest.current.width;
+        onPanResponderGrant: (event) => {
+          start.current = {
+            width: latest.current.width,
+            pageX: event.nativeEvent.pageX,
+          };
           setDragging(true);
         },
-        onPanResponderMove: (_, gesture) =>
-          latest.current.resize(start.current + gesture.dx),
-        onPanResponderRelease: () => setDragging(false),
-        onPanResponderTerminate: () => setDragging(false),
-        onPanResponderTerminationRequest: () => false,
-      }),
-    [],
-  );
-  const hitAreaResponder = React.useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          start.current = latest.current.width;
-          setDragging(true);
-        },
-        onPanResponderMove: (_, gesture) =>
-          latest.current.resize(start.current + gesture.dx),
+        // Use root coordinates: the handle itself moves during resizing.
+        onPanResponderMove: (event) =>
+          latest.current.resize(
+            start.current.width + event.nativeEvent.pageX - start.current.pageX,
+          ),
         onPanResponderRelease: () => setDragging(false),
         onPanResponderTerminate: () => setDragging(false),
         onPanResponderTerminationRequest: () => false,
@@ -105,7 +94,8 @@ function Divider({
     <DesktopView
       {...responder.panHandlers}
       testID={`split-divider-${column.id}`}
-      onLayout={(event) => onWidthChange(event.nativeEvent.layout.width)}
+      style={styles.dividerHitArea}
+      pointerEvents="box-only"
       accessible
       focusable
       accessibilityRole="adjustable"
@@ -131,20 +121,21 @@ function Divider({
           consumeKey(event);
         }
       }}
-      style={[
-        { width: 6, backgroundColor: colors.border },
-        typeof style === 'function' ? style(context) : style,
-        typeof column.dividerStyle === 'function'
-          ? column.dividerStyle(context)
-          : column.dividerStyle,
-      ]}
     >
-      {(column.renderDivider ?? renderContent)?.(context)}
       <View
-        {...hitAreaResponder.panHandlers}
+        testID={`split-divider-visual-${column.id}`}
+        onLayout={(event) => onWidthChange(event.nativeEvent.layout.width)}
         accessible={false}
-        style={styles.dividerHitArea}
-      />
+        style={[
+          { flex: 1, width: 6, backgroundColor: colors.border },
+          typeof style === 'function' ? style(context) : style,
+          typeof column.dividerStyle === 'function'
+            ? column.dividerStyle(context)
+            : column.dividerStyle,
+        ]}
+      >
+        {(column.renderDivider ?? renderContent)?.(context)}
+      </View>
     </DesktopView>
   );
 }
@@ -349,11 +340,11 @@ const styles = StyleSheet.create({
   split: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
   row: { flex: 1, minWidth: 0, flexDirection: 'row', overflow: 'hidden' },
   dividerHitArea: {
-    position: 'absolute',
-    top: 0,
-    right: -8,
-    bottom: 0,
-    left: -8,
+    // Enlarge the native view's bounds; negative margins keep the columns
+    // and visible divider at their original positions. Measure only the visual.
+    paddingHorizontal: 8,
+    marginHorizontal: -8,
+    flexShrink: 0,
     zIndex: 1,
   },
 });
