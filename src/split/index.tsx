@@ -82,6 +82,23 @@ function Divider({
       }),
     [],
   );
+  const hitAreaResponder = React.useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          start.current = latest.current.width;
+          setDragging(true);
+        },
+        onPanResponderMove: (_, gesture) =>
+          latest.current.resize(start.current + gesture.dx),
+        onPanResponderRelease: () => setDragging(false),
+        onPanResponderTerminate: () => setDragging(false),
+        onPanResponderTerminationRequest: () => false,
+      }),
+    [],
+  );
   const { colors } = useNavigationTheme();
   const context = { columnId: column.id, width, dragging };
   return (
@@ -124,7 +141,7 @@ function Divider({
     >
       {(column.renderDivider ?? renderContent)?.(context)}
       <View
-        {...responder.panHandlers}
+        {...hitAreaResponder.panHandlers}
         accessible={false}
         style={styles.dividerHitArea}
       />
