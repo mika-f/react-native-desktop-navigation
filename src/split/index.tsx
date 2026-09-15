@@ -88,6 +88,9 @@ function Divider({
     <DesktopView
       {...responder.panHandlers}
       testID={`split-divider-${column.id}`}
+      // Keep the divider's layout width unchanged while making mouse/touch
+      // targeting easier near the boundary.
+      hitSlop={{ left: 8, right: 8 }}
       onLayout={(event) => onWidthChange(event.nativeEvent.layout.width)}
       accessible
       focusable
