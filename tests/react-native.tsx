@@ -65,3 +65,13 @@ export const PanResponder = {
     },
   }),
 };
+export const UIManager = { hasViewManagerConfig: (_name: string) => true };
+export const codegenNativeComponent = <P,>(name: string) =>
+  host(name) as React.ComponentType<P>;
+
+export const Image = {
+  resolveAssetSource: (source: number | { uri: string }) =>
+    typeof source === 'number'
+      ? { uri: `file:///assets/${source}.png` }
+      : source,
+};

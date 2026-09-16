@@ -53,3 +53,9 @@ NavigationContainer
 `<Customization showDividers={false} />` で Split Divider を完全に非表示にできます。この Example の Sidebar 下部は `renderSidebarFooter` で既定ボタン全体を置き換えています。下部自体を削除する場合は `renderSidebarFooter={() => null}` を指定してください。
 
 Split の境界をドラッグすると、隣接する2列の幅が同時に変化します。Sidebar のバーも列幅全体に追従させる場合は `Sidebar.Navigator` の `width` を `"fill"` に変更してください（項目一覧専用の列向け）。数値の場合はバー幅を固定し、同じ列内の画面領域が伸縮します。
+
+## Fabric の Native Example
+
+`Native.tsx` は `/native` の Sidebar と Stack を組み合わせます。[Native 導入手順](../../NATIVE.md) に従ってホストをビルドし、import をパッケージの `/native` に変更して登録してください。入力値の保持、詳細画面の往復、`beforeRemove` による戻る操作の抑止、配色のカスタマイズと、選択状態に応じたネイティブアイコンの切り替えを確認できます。
+
+`NativeLucide.tsx` は Lucide の React 要素を native Sidebar の `icon` に渡す例です。ホスト側に `lucide-react-native` / `react-native-svg` を追加し、`react-native-svg` がその OS / Fabric 環境で動作することを確認してください。`iconSize` と SVG 自身の `size` の指定、選択状態による色変更を含みます。macOS 0.81 / Fabric では `react-native-svg` 15.15.5 以降を使用してください。詳細は [Native 導入手順](../../NATIVE.md#lucide--react-要素のアイコン) を参照してください。

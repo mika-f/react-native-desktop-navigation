@@ -1,3 +1,4 @@
+import { House } from 'lucide-react-native';
 import React from 'react';
 import {
   createStackNavigator,
@@ -124,3 +125,78 @@ const badDivider: import('../src').SplitNavigatorProps = {
   // @ts-expect-error visibility must be boolean
   dividerShown: 'hidden',
 };
+
+// The native entrypoint preserves route types while limiting OS chrome options.
+import {
+  createStackNavigator as createNativeStackNavigator,
+  createSidebarNavigator as createNativeSidebarNavigator,
+} from '../src/native';
+const NativeStackTypes = createNativeStackNavigator<{
+  Home: undefined;
+  Detail: { id: string };
+}>();
+const NativeSidebarTypes = createNativeSidebarNavigator<{ Home: undefined }>();
+const nativeTypes = (
+  <>
+    <NativeStackTypes.Navigator
+      initialRouteName="Home"
+      appearance={{ accentColor: '#aa33ff' }}
+    >
+      <NativeStackTypes.Screen
+        name="Detail"
+        component={({ navigation, route }) => {
+          navigation.push('Detail', { id: route.params.id });
+          // @ts-expect-error params remain required in native navigators
+          navigation.push('Detail');
+          return null;
+        }}
+      />
+    </NativeStackTypes.Navigator>
+  </>
+);
+void nativeTypes;
+
+const unsupportedNativeStackOptions: import('../src/native').NativeStackScreenOptions =
+  {
+    // @ts-expect-error native card presentation does not expose JS overlays
+    presentation: 'dialog',
+  };
+const unsupportedNativeSidebarOptions: import('../src/native').NativeSidebarScreenOptions =
+  {
+    // @ts-expect-error native menu chrome does not accept RN item styles
+    itemStyle: { padding: 8 },
+  };
+void unsupportedNativeStackOptions;
+void unsupportedNativeSidebarOptions;
+
+const nativeIconOptions: import('../src/native').NativeSidebarScreenOptions = {
+  icon: ({ focused, disabled }) => ({
+    type: 'system',
+    macos: focused ? 'house.fill' : 'house',
+    windows: { glyph: '\uE80F' },
+    color: disabled ? '#888888' : '#ffffff',
+  }),
+};
+const nativeImageOptions: import('../src/native').NativeSidebarScreenOptions = {
+  icon: { type: 'image', source: { uri: 'file:///icon.png' }, template: true },
+};
+const nativeReactIcon: import('../src/native').NativeSidebarScreenOptions = {
+  icon: <House size={20} />,
+  iconSize: 20,
+};
+const invalidNativeGlyph: import('../src/native').NativeSidebarIcon = {
+  type: 'system',
+  // @ts-expect-error pass the Unicode string rather than an integer codepoint
+  windows: { glyph: 0xe80f },
+};
+void nativeIconOptions;
+void nativeImageOptions;
+void nativeReactIcon;
+void invalidNativeGlyph;
+
+const nativeReactCallback: import('../src/native').NativeSidebarScreenOptions =
+  {
+    icon: ({ focused, disabled }) =>
+      disabled ? null : <House color={focused ? '#ffffff' : '#888888'} />,
+  };
+void nativeReactCallback;

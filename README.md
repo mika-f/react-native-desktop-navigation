@@ -4,6 +4,12 @@
 
 実行時の必須依存は `react` と `react-native` のみです。React Navigation との API / State 互換性、iOS / Android / Web 対応は目的としません。
 
+## ネイティブ表示（Fabric / experimental）
+
+`@natsuneko-laboratory/react-native-desktop-navigation/native` から、共通の Router / Store を使うネイティブ版 Stack / Sidebar / Split を利用できます。macOS は SwiftUI の `NavigationStack` / `NavigationSplitView`、Windows は WinUI の `NavigationView` / `SplitView` を使用します。
+
+macOS 14+ / RN macOS 0.81 系、および RN Windows 0.82+ の Fabric を実装対象としています。ネイティブ版は追加のビルド設定が必要で、対応するスタイル・options は JS 版と異なります。導入、カスタマイズ、現在の検証範囲は [NATIVE.md](NATIVE.md) を参照してください。以下の既存 API の説明は `/` の JS 版です。
+
 ## インストール
 
 ```sh

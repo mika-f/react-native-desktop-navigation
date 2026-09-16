@@ -1,6 +1,6 @@
 {
   "name": "@natsuneko-laboratory/react-native-desktop-navigation",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.9",
   "description": "Desktop-first navigation for React Native macOS and Windows",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -16,23 +16,35 @@
       "types": "./dist/routers/index.d.ts",
       "default": "./dist/routers/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./native": {
+      "types": "./dist/native/index.d.ts",
+      "react-native": "./src/native/index.ts",
+      "default": "./dist/native/index.js"
+    }
   },
   "files": [
     "dist",
     "src",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "macos",
+    "windows",
+    "DesktopNavigation.podspec",
+    "react-native.config.js",
+    "NATIVE.md"
   ],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run build",
+    "check": "npm run typecheck && npm test && npm run build && npm run check:native-codegen",
     "prepack": "npm run build",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "check:native-codegen": "node scripts/check-native-codegen.js",
+    "check:native-macos": "bash scripts/check-native-macos.sh"
   },
   "peerDependencies": {
     "react": ">=18",
@@ -41,9 +53,11 @@
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-test-renderer": "^19.0.0",
+    "lucide-react-native": "^1.46.0",
     "prettier": "^3.6.2",
     "react": "19.1.0",
     "react-native": "0.81.0",
+    "react-native-svg": "^15.15.5",
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2",
     "vitest": "^3.2.4"
@@ -55,5 +69,15 @@
     "type": "git",
     "url": "https://github.com/mika-f/react-native-desktop-navigation.git"
   },
-  "packageManager": "pnpm@12.4.2"
+  "packageManager": "pnpm@12.4.2",
+  "codegenConfig": {
+    "name": "DesktopNavigationSpec",
+    "type": "components",
+    "jsSrcsDir": "src/native/specs",
+    "ios": {
+      "componentProvider": {
+        "DesktopNavigationHost": "DDNNavigationComponentView"
+      }
+    }
+  }
 }

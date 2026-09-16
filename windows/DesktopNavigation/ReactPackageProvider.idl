@@ -1,0 +1,6 @@
+namespace DesktopNavigation {
+  [default_interface]
+  runtimeclass ReactPackageProvider : Microsoft.ReactNative.IReactPackageProvider {
+    ReactPackageProvider();
+  }
+}

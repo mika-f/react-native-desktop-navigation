@@ -22,6 +22,8 @@ export interface SceneProps {
   route: NavigationRoute;
   component: React.ComponentType<any>;
   visible: boolean;
+  /** Native content slots must be laid out before restoring keyboard focus. */
+  focusReady?: boolean;
   options: CommonScreenOptions;
   animation?: StackAnimation;
   overlay?: 'modal' | 'dialog';
@@ -34,6 +36,7 @@ export function Scene({
   route,
   component: Component,
   visible,
+  focusReady = true,
   options,
   animation = 'none',
   overlay,
@@ -76,13 +79,14 @@ export function Scene({
   );
   const mounted = visible || options.inactiveBehavior !== 'unmount';
   React.useEffect(() => {
-    if (!focused || !visible || options.focusBehavior === 'none') return;
+    if (!focused || !visible || !focusReady || options.focusBehavior === 'none')
+      return;
     const previous =
       options.focusBehavior !== 'first' && last.current
         ? targets.current.get(last.current)
         : undefined;
     (previous ?? targets.current.values().next().value)?.focus();
-  }, [focused, visible, options.focusBehavior, mounted]);
+  }, [focused, visible, focusReady, options.focusBehavior, mounted]);
   const [progress] = React.useState(() => new Animated.Value(1));
   React.useEffect(() => {
     if (!visible || animation === 'none') {
