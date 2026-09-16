@@ -82,8 +82,12 @@ private struct Configuration: Decodable {
   var backTitle: String?
   var collapsed: Bool?
   var paneWidth: Double?
+  var footerHeight: Double?
   var columns: [Column]?
 }
+// Not a valid route key: route keys never start with a NUL character.
+private let footerSlotKey = "\u{0}footer"
+
 private func color(_ value: String?, fallback: Color) -> Color {
   guard let value, value.first == "#",
         let hex = UInt64(value.dropFirst(), radix: 16),
@@ -125,6 +129,8 @@ private final class NavigationModel: ObservableObject {
       let frame = value.isNull ? CGRect.zero : value
       return ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
     }
+    var slots = values
+    let footer = slots.removeValue(forKey: footerSlotKey)
     var icons: [String: Any] = [:]
     if configuration.mode == "sidebar", configuration.collapsed != true, let host {
       for item in configuration.items where item.hidden != true && item.icon?.type == "react" {
@@ -135,8 +141,13 @@ private final class NavigationModel: ObservableObject {
         icons[item.key] = ["frame": rect(frame), "clip": rect(clip)]
       }
     }
-    let message: [String: Any] = ["type": "layout", "revision": configuration.revision,
-      "frames": values.mapValues { rect($0.intersection(viewport)) }, "iconFrames": icons]
+    var message: [String: Any] = ["type": "layout", "revision": configuration.revision,
+      "frames": slots.mapValues { rect($0.intersection(viewport)) }, "iconFrames": icons]
+    if configuration.mode == "sidebar", configuration.collapsed != true,
+       (configuration.footerHeight ?? 0) > 0, let footer {
+      let visible = footer.intersection(viewport)
+      if !visible.isNull, visible.width > 0, visible.height > 0 { message["footerFrame"] = rect(visible) }
+    }
     guard let data = try? JSONSerialization.data(withJSONObject: message, options: .sortedKeys),
           let payload = String(data: data, encoding: .utf8), payload != lastLayout else { return }
     lastLayout = payload
@@ -185,6 +196,16 @@ private struct ContentSlot: View {
       .background(GeometryReader { geometry in
         Color.clear.preference(key: FramePreference.self,
           value: [id: geometry.frame(in: .named("DDNNavigation"))])
+      })
+      .accessibilityHidden(true)
+  }
+}
+private struct FooterSlot: View {
+  var body: some View {
+    Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(GeometryReader { geometry in
+        Color.clear.preference(key: FramePreference.self,
+          value: [footerSlotKey: geometry.frame(in: .named("DDNNavigation"))])
       })
       .accessibilityHidden(true)
   }
@@ -256,32 +277,37 @@ private struct NavigationRoot: View {
   }
   var sidebar: some View {
     NavigationSplitView(columnVisibility: visibility) {
-      List(selection: Binding<String?>(get: { config.activeKey }, set: { key in
-        if let key { model.send(["type": "select", "key": key]) }
-      })) {
-        ForEach(Array(config.items.filter { $0.hidden != true }.enumerated()), id: \.element.key) { index, item in
-          if let section = item.section,
-             index == 0 || config.items.filter({ $0.hidden != true })[index - 1].section != section {
-            Text(section).font(.caption).foregroundStyle(.secondary).accessibilityAddTraits(.isHeader)
-              .selectionDisabled()
+      VStack(spacing: 0) {
+        List(selection: Binding<String?>(get: { config.activeKey }, set: { key in
+          if let key { model.send(["type": "select", "key": key]) }
+        })) {
+          ForEach(Array(config.items.filter { $0.hidden != true }.enumerated()), id: \.element.key) { index, item in
+            if let section = item.section,
+               index == 0 || config.items.filter({ $0.hidden != true })[index - 1].section != section {
+              Text(section).font(.caption).foregroundStyle(.secondary).accessibilityAddTraits(.isHeader)
+                .selectionDisabled()
+            }
+            Group {
+              if let icon = item.icon {
+                Label { Text(item.title) } icon: {
+                  if icon.type == "react" {
+                    ReactIconAnchor(key: item.key, model: model)
+                      .frame(width: icon.size, height: icon.size).accessibilityHidden(true)
+                  } else { SidebarIconView(icon: icon) }
+                }
+                  .labelStyle(.titleAndIcon)
+              } else { Text(item.title) }
+            }
+            .tag(item.key).disabled(item.disabled == true)
+            .selectionDisabled(item.disabled == true)
           }
-          Group {
-            if let icon = item.icon {
-              Label { Text(item.title) } icon: {
-                if icon.type == "react" {
-                  ReactIconAnchor(key: item.key, model: model)
-                    .frame(width: icon.size, height: icon.size).accessibilityHidden(true)
-                } else { SidebarIconView(icon: icon) }
-              }
-                .labelStyle(.titleAndIcon)
-            } else { Text(item.title) }
-          }
-          .tag(item.key).disabled(item.disabled == true)
-          .selectionDisabled(item.disabled == true)
+        }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        if let height = config.footerHeight, height > 0 {
+          FooterSlot().frame(height: height)
         }
       }
-      .listStyle(.sidebar)
-      .scrollContentBackground(.hidden)
       .background(color(config.appearance?.sidebarBackgroundColor, fallback: Color(nsColor: .controlBackgroundColor)))
       .navigationSplitViewColumnWidth(min: 100, ideal: config.paneWidth ?? 240, max: 600)
     } detail: { ContentSlot(id: config.activeKey) }

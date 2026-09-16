@@ -43,6 +43,8 @@ export interface NativeConfiguration {
   backTitle?: string;
   collapsed?: boolean;
   paneWidth?: number;
+  /** Height reserved below the sidebar list for a React footer. */
+  footerHeight?: number;
   columns?: NativeColumn[];
 }
 export type NativeRequest =
@@ -76,6 +78,7 @@ interface LayoutEvent {
   revision: number;
   frames: Record<string, NativeRect>;
   iconFrames?: Record<string, NativeIconFrame>;
+  footerFrame?: NativeRect;
 }
 
 // Keep native event payloads at this boundary. Native UI requests changes; the
@@ -131,6 +134,8 @@ export function parseNativeEvent(
           ))
       )
         return null;
+      if (value.footerFrame !== undefined && !isRect(value.footerFrame))
+        return null;
       return value;
     default:
       return null;
@@ -145,6 +150,9 @@ export interface NativeSurfaceProps {
     content: React.ReactNode | ((ready: boolean) => React.ReactNode);
   }[];
   icons?: { key: string; content: React.ReactElement }[];
+  /** Interactive React content placed in the native footer region. */
+  footer?: React.ReactNode;
+  onFooterHeight?: (height: number) => void;
   style?: StyleProp<ViewStyle>;
   onRequest: (request: NativeRequest) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
@@ -154,6 +162,8 @@ export function NativeSurface({
   configuration,
   slots,
   icons = [],
+  footer,
+  onFooterHeight,
   style,
   onRequest,
   onLayout,
@@ -205,6 +215,8 @@ export function NativeSurface({
   }
   const revision = version.current.revision;
   const [layout, setLayout] = React.useState<LayoutEvent | null>(null);
+  const footerFrame = layout?.footerFrame;
+  const footerPlaced = !!footerFrame && footerFrame.width > 0;
   return (
     <View style={[styles.container, style]} onLayout={onLayout}>
       <NativeHost
@@ -260,6 +272,38 @@ export function NativeSurface({
           );
         })}
       </View>
+      {footer != null && footer !== false && (
+        // Measured at its natural height so native can reserve exactly that
+        // much space; kept invisible until native reports the reserved frame.
+        <View
+          collapsable={false}
+          pointerEvents={footerPlaced ? 'box-none' : 'none'}
+          accessibilityElementsHidden={!footerPlaced}
+          importantForAccessibility={
+            footerPlaced ? 'auto' : 'no-hide-descendants'
+          }
+          onLayout={(event) =>
+            onFooterHeight?.(event.nativeEvent.layout.height)
+          }
+          style={[
+            styles.footer,
+            footerPlaced
+              ? {
+                  left: footerFrame.x,
+                  top: footerFrame.y,
+                  width: footerFrame.width,
+                }
+              : {
+                  left: 0,
+                  top: 0,
+                  width: configuration.paneWidth ?? 240,
+                  opacity: 0,
+                },
+          ]}
+        >
+          {footer}
+        </View>
+      )}
       <View
         pointerEvents="none"
         accessible={false}
@@ -319,5 +363,6 @@ export function NativeSurface({
 const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   slot: { position: 'absolute', overflow: 'hidden' },
+  footer: { position: 'absolute' },
   hidden: { display: 'none' },
 });

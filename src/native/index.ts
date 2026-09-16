@@ -28,6 +28,7 @@ export type {
   SidebarNavigation,
   StackScreenProps,
   SidebarScreenProps,
+  SidebarFooterProps,
   NavigationTheme,
   NavigationRef,
 } from '../core/types';

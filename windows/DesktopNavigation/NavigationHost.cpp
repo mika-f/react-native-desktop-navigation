@@ -89,6 +89,7 @@ struct Host : implements<Host, IInspectable> {
   TextBlock title{nullptr};
   Grid header{nullptr};
   Border content{nullptr};
+  Border footer{nullptr};
   std::map<hstring, NavigationViewItem> menu;
   std::map<hstring, hstring> iconConfigurations;
   std::map<hstring, Border> slots;
@@ -206,6 +207,10 @@ struct Host : implements<Host, IInspectable> {
     Number(event, L"revision", config.GetNamedNumber(L"revision", 0));
     event.SetNamedValue(L"frames", frames);
     event.SetNamedValue(L"iconFrames", iconFrames);
+    if (navigation && footer && navigation.IsPaneOpen() && footer.Visibility() == Visibility::Visible &&
+        footer.IsLoaded() && footer.ActualWidth() > 0 && footer.ActualHeight() > 0) {
+      event.SetNamedValue(L"footerFrame", RectJSON(Intersect(Bounds(footer), Bounds(root))));
+    }
     auto serialized = event.Stringify();
     if (serialized == lastLayout) return;
     lastLayout = serialized;
@@ -252,6 +257,10 @@ struct Host : implements<Host, IInspectable> {
     });
     navigation.PaneOpened([this](auto const &, auto const &) { Collapsed(false); });
     navigation.PaneClosed([this](auto const &, auto const &) { Collapsed(true); });
+    // An empty, measured placeholder; the React footer is composited over it.
+    footer = Border(); footer.HorizontalAlignment(HorizontalAlignment::Stretch);
+    Automation::AutomationProperties::SetAccessibilityView(footer, Automation::Peers::AccessibilityView::Raw);
+    navigation.PaneFooter(footer);
     content = Slot(config.GetNamedString(L"activeKey"));
     navigation.Content(content); root.Children().Append(navigation);
   }
@@ -335,7 +344,7 @@ struct Host : implements<Host, IInspectable> {
       ClearScrollObservers();
       root.Children().Clear(); root.RowDefinitions().Clear(); root.ColumnDefinitions().Clear();
       slots.clear(); menu.clear(); iconConfigurations.clear(); detailColumns.clear();
-      navigation = nullptr; split = nullptr; content = nullptr;
+      navigation = nullptr; split = nullptr; content = nullptr; footer = nullptr;
       structure = nextStructure;
       if (mode == L"sidebar") BuildSidebar(items);
       else if (mode == L"split") BuildSplit(columns);
@@ -357,6 +366,9 @@ struct Host : implements<Host, IInspectable> {
     if (navigation) {
       navigation.OpenPaneLength(config.GetNamedNumber(L"paneWidth", 240));
       navigation.IsPaneOpen(!config.GetNamedBoolean(L"collapsed", false));
+      auto footerHeight = config.GetNamedNumber(L"footerHeight", 0);
+      footer.Height(footerHeight > 0 ? footerHeight : 0);
+      footer.Visibility(footerHeight > 0 ? Visibility::Visible : Visibility::Collapsed);
       navigation.Foreground(foreground);
       auto resource = Brush(appearance.GetNamedString(L"sidebarBackgroundColor", L""), {255, 245, 245, 247});
       navigation.Resources().Insert(box_value(L"NavigationViewExpandedPaneBackground"), resource);

@@ -671,3 +671,101 @@ it('supports direct JSX and rejects invalid React slot dimensions and icon geome
     ).toBeNull();
   }
 });
+
+it('measures a React sidebar footer, reserves native space and places it at the reported frame', () => {
+  const Sidebar = createSidebarNavigator<{ A: undefined; B: undefined }>();
+  let footerProps!: import('../src/native').SidebarFooterProps;
+  let shown!: (value: boolean) => void;
+  function App() {
+    const [visible, setVisible] = React.useState(true);
+    shown = setVisible;
+    return (
+      <Sidebar.Navigator
+        width={200}
+        renderSidebarFooter={
+          visible
+            ? (props) => {
+                footerProps = props;
+                return <Text testID="footer">Settings</Text>;
+              }
+            : undefined
+        }
+      >
+        <Sidebar.Screen name="A" component={() => null} />
+        <Sidebar.Screen name="B" component={() => null} />
+      </Sidebar.Navigator>
+    );
+  }
+  render(
+    <NavigationContainer>
+      <App />
+    </NavigationContainer>,
+  );
+  const container = () => {
+    let node = renderer!.root.findByProps({ testID: 'footer' }).parent;
+    while (node && typeof node.props.onLayout !== 'function')
+      node = node.parent;
+    return node!;
+  };
+  expect(footerProps).toMatchObject({ collapsed: false, children: null });
+  expect(configuration().footerHeight).toBeUndefined();
+  expect(container().props.pointerEvents).toBe('none');
+  expect(container().props.style).toContainEqual(
+    expect.objectContaining({ width: 200, opacity: 0 }),
+  );
+  act(() =>
+    container().props.onLayout({
+      nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 52.3 } },
+    }),
+  );
+  expect(configuration().footerHeight).toBe(53);
+  const revision = configuration().revision;
+  act(() =>
+    container().props.onLayout({
+      nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 52.6 } },
+    }),
+  );
+  expect(configuration().revision).toBe(revision);
+  event({
+    type: 'layout',
+    frames: {},
+    footerFrame: { x: 8, y: 540, width: 184, height: 53 },
+  });
+  expect(container().props.pointerEvents).toBe('box-none');
+  expect(container().props.style).toContainEqual({
+    left: 8,
+    top: 540,
+    width: 184,
+  });
+  act(() => footerProps.toggleSidebar());
+  expect(configuration().collapsed).toBe(true);
+  expect(footerProps.collapsed).toBe(true);
+  act(() => footerProps.toggleSidebar());
+  expect(configuration().collapsed).toBe(false);
+  act(() => shown(false));
+  expect(renderer!.root.findAllByProps({ testID: 'footer' })).toHaveLength(0);
+  expect(configuration().footerHeight).toBeUndefined();
+  const rect = { x: 0, y: 0, width: 10, height: 10 };
+  expect(
+    parseNativeEvent(
+      JSON.stringify({
+        type: 'layout',
+        revision: 0,
+        frames: {},
+        footerFrame: rect,
+      }),
+    ),
+  ).not.toBeNull();
+  for (const footerFrame of [null, [], { ...rect, height: -1 }, { x: 0 }]) {
+    expect(
+      parseNativeEvent(
+        JSON.stringify({
+          type: 'layout',
+          revision: 0,
+          frames: {},
+          footerFrame,
+        }),
+      ),
+    ).toBeNull();
+  }
+});

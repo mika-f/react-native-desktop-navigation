@@ -130,7 +130,7 @@ export default function App() {
 
 ### Sidebar
 
-`Navigator` は `initialRouteName`、`defaultCollapsed`、`width`（100 以上の数値）、`appearance`、`style`、`screenOptions` を受け取ります。`Screen` は `label` / `title`、`icon`、`iconSize`、`hidden`、`disabled` と共通 Scene options に対応します。`Section title="…"` で見出しを指定できます。
+`Navigator` は `initialRouteName`、`defaultCollapsed`、`width`（100 以上の数値）、`appearance`、`style`、`screenOptions`、`renderSidebarFooter` を受け取ります。`Screen` は `label` / `title`、`icon`、`iconSize`、`hidden`、`disabled` と共通 Scene options に対応します。`Section title="…"` で見出しを指定できます。
 
 選択・開閉は既存の `select` / `navigate` / `collapseSidebar` / `expandSidebar` / `toggleSidebar` と同期します。macOS の幅は SwiftUI に渡す推奨幅です。
 
@@ -210,7 +210,33 @@ macOS 0.81 / Fabric では、`react-native-svg` 15.15.5 で SVG アイコンの�
 
 使用例は [`examples/desktop/NativeLucide.tsx`](examples/desktop/NativeLucide.tsx) にあります。
 
-`renderItemContent`、React badge、項目ごとの RN style、独自 footer はこの Native Sidebar では提供しません。これらが必要な場合は JS 版 Sidebar を Native Split 内で使用してください。
+#### フッター
+
+`renderSidebarFooter` で、項目リストの下に React のフッター（アカウント表示や設定ボタンなど）を配置できます。
+
+```tsx
+<Sidebar.Navigator
+  renderSidebarFooter={({ collapsed, toggleSidebar }) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="設定"
+      focusable
+      onPress={openSettings}
+      style={{ padding: 12 }}
+    >
+      <Text>設定</Text>
+    </Pressable>
+  )}
+>
+  {/* Sidebar.Screen */}
+</Sidebar.Navigator>
+```
+
+フッターは元の Fabric ツリー内で描画し、Context・state・操作・アクセシビリティをそのまま扱えます。React 側で測定した自然な高さをネイティブへ送り、macOS はサイドバー列の List の下、Windows は `NavigationView.PaneFooter` にその高さの空領域を確保します。フッターはネイティブが測定した領域の位置と幅に合わせて配置し、測定前は非表示のまま高さだけを計測します。高さはフッターの内容で決まるため、`flex: 1` など親の高さに依存するスタイルは使わないでください。
+
+`SidebarFooterProps` の `collapsed`、`toggleSidebar` / `collapseSidebar` / `expandSidebar` は JS 版と同じです。ネイティブ Sidebar は開閉ボタンを OS 側で表示するため、`children` は常に `null` です。サイドバーを閉じている間（macOS の折り畳み、Windows の閉じたペイン）はフッターを表示しません。`renderSidebarFooter` が `null` を返すと領域ごと削除します。
+
+`renderItemContent`、React badge、項目ごとの RN style はこの Native Sidebar では提供しません。これらが必要な場合は JS 版 Sidebar を Native Split 内で使用してください。
 
 ### Split
 

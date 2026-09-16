@@ -14,7 +14,11 @@ import {
 } from '../core/builder';
 import { Scene } from '../core/Scene';
 import { createNavigation } from '../core/navigation';
-import type { CommonScreenOptions, SidebarNavigation } from '../core/types';
+import type {
+  CommonScreenOptions,
+  SidebarFooterProps,
+  SidebarNavigation,
+} from '../core/types';
 import { NativeSurface, type NativeAppearance } from './host';
 import { resolveNativeIcon, type NativeSidebarIconOption } from './icons';
 
@@ -35,6 +39,8 @@ export interface NativeSidebarNavigatorProps {
   style?: StyleProp<ViewStyle>;
   appearance?: NativeAppearance;
   screenOptions?: NativeSidebarScreenOptions;
+  /** React content below the native item list. `children` is always null. */
+  renderSidebarFooter?: (props: SidebarFooterProps) => React.ReactNode;
 }
 export function createSidebarNavigator<
   P extends ParamListBase = ParamListBase,
@@ -83,6 +89,20 @@ export function createSidebarNavigator<
         },
         props.id,
       );
+    const [footerHeight, setFooterHeight] = React.useState(0);
+    const collapseSidebar = () =>
+      store.dispatch({ target: id, type: 'collapseSidebar' });
+    const expandSidebar = () =>
+      store.dispatch({ target: id, type: 'expandSidebar' });
+    const footer = props.renderSidebarFooter?.({
+      collapsed: state.collapsed,
+      collapseSidebar,
+      expandSidebar,
+      toggleSidebar: () =>
+        state.collapsed ? expandSidebar() : collapseSidebar(),
+      children: null,
+    });
+    const hasFooter = footer != null && footer !== false;
     const items = state.routes.map((route) => {
       const definition = definitions.find((d) => d.name === route.name);
       if (!definition)
@@ -141,8 +161,17 @@ export function createSidebarNavigator<
             activeKey: state.activeRouteKey,
             collapsed: state.collapsed,
             paneWidth: props.width ?? 240,
+            footerHeight:
+              hasFooter && footerHeight > 0 ? footerHeight : undefined,
             appearance: props.appearance,
           }}
+          footer={hasFooter ? footer : undefined}
+          onFooterHeight={(height) =>
+            setFooterHeight((previous) =>
+              // Sub-point changes would only churn native revisions.
+              Math.abs(previous - height) < 0.5 ? previous : Math.ceil(height),
+            )
+          }
           icons={items.flatMap((i) =>
             React.isValidElement(i.icon) && !i.options.hidden
               ? [{ key: i.route.key, content: i.icon }]
@@ -150,10 +179,7 @@ export function createSidebarNavigator<
           )}
           onRequest={(request) => {
             if (request.type === 'collapse')
-              store.dispatch({
-                target: id,
-                type: request.collapsed ? 'collapseSidebar' : 'expandSidebar',
-              });
+              request.collapsed ? collapseSidebar() : expandSidebar();
             if (request.type === 'select') {
               const item = items.find(
                 (i) =>

@@ -89,6 +89,25 @@ struct Smoke {
     applySidebar()
     precondition(iconFrames().isEmpty, "Removed icons must not retain stale anchors")
     print("Native React icon slots passed: scrolling, clipping, collapse/expand, removal")
+    func footerFrame() -> [String: Double]? { layouts.last?["footerFrame"] as? [String: Double] }
+    sidebar["revision"] = 9
+    sidebar["footerHeight"] = 64
+    applySidebar()
+    guard let footer = footerFrame() else { fatalError("Missing native footer slot") }
+    // The headless window offsets SwiftUI content by its toolbar, so frames are
+    // clipped at the viewport bottom; the footer must end there, never above.
+    precondition(footer["width"]! > 0 && footer["height"]! > 0 && footer["height"]! <= 64 && abs(footer["y"]! + footer["height"]! - 600) < 0.5, "Footer must be reserved at the bottom of the sidebar: \(footer)")
+    precondition((layouts.last?["frames"] as? [String: Any])?.keys.allSatisfy { !$0.hasPrefix("\u{0}") } ?? false, "Footer must not leak into content frames")
+    sidebar["revision"] = 10
+    sidebar["collapsed"] = true
+    applySidebar()
+    precondition(footerFrame() == nil, "Collapsed sidebar must hide the footer")
+    sidebar["revision"] = 11
+    sidebar["collapsed"] = false
+    sidebar["footerHeight"] = nil
+    applySidebar()
+    precondition(footerFrame() == nil, "Removed footer must not report a frame")
+    print("Native sidebar footer slot passed: reservation, collapse, removal")
     print("SwiftUI native layout smoke passed")
   }
 }
