@@ -1,31 +1,31 @@
 # Native desktop navigation (Fabric / experimental)
 
-`@natsuneko-laboratory/react-native-desktop-navigation/native` は、既存の Router / Store / Context を使い、ナビゲーションの表示を SwiftUI / WinUI に接続するエントリーポイントです。既存の `/` は引き続き React Native の View ベースの Navigator を提供します。
+`@natsuneko-laboratory/react-native-desktop-navigation/native` is an entry point that reuses the existing Router / Store / Context and connects navigation rendering to SwiftUI / WinUI. The existing `/` entry point continues to provide the React Native `View`-based Navigators.
 
-| Navigator                | macOS                                            | Windows                                                   |
-| ------------------------ | ------------------------------------------------ | --------------------------------------------------------- |
-| `createStackNavigator`   | SwiftUI `NavigationStack` とネイティブのヘッダー | WinUI のヘッダーとコンテンツ領域。履歴は共通 Store が管理 |
-| `createSidebarNavigator` | `NavigationSplitView` と `List`                  | `NavigationView`                                          |
-| `createSplitNavigator`   | 2〜3 列の `NavigationSplitView`                  | `SplitView` と、3 列時の追加 Grid / Thumb                 |
+| Navigator                | macOS                                          | Windows                                                                 |
+| ------------------------ | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `createStackNavigator`   | SwiftUI `NavigationStack` with a native header | A WinUI header and content area; history is managed by the shared Store |
+| `createSidebarNavigator` | `NavigationSplitView` and `List`               | `NavigationView`                                                        |
+| `createSplitNavigator`   | A 2-3 column `NavigationSplitView`             | `SplitView`, plus an additional Grid / Thumb for 3 columns              |
 
-画面の React ツリーは元の Fabric ツリー内に保持します。ネイティブから通知されたコンテンツ領域に React の Scene を配置するため、Context、画面の local state、ネストした Navigator、既存の Hooks を共用できます。React の画面を別の root に再マウントしたり、ネイティブ階層へ reparent したりしません。
+Each screen's React tree stays inside the original Fabric tree. React Scenes are placed into the content area the native side reports, so Context, per-screen local state, nested Navigators, and existing Hooks are all shared. React screens are never remounted onto a separate root or reparented into the native hierarchy.
 
-## 対象と導入
+## Requirements and setup
 
-- **Fabric 専用**です。Paper ではエラーにします。
-- macOS: macOS **14 以降**、React Native macOS **0.81 系以降を実装対象**としています。
-- Windows: React Native Windows **0.82 以降**の Fabric / XAML Island API を使用します。`UseExperimentalWinUI3` が必要です。0.81 の Windows は対象外です。
-- Metro の Babel preset はホストの RN に対応した `@react-native/babel-preset` を使用してください。NativeComponent spec から静的 ViewConfig を生成します。
+- **Fabric only.** This throws an error under Paper.
+- macOS: implementation targets macOS **14 or later**, and React Native macOS **0.81.x or later**.
+- Windows: uses React Native Windows **0.82 or later**'s Fabric / XAML Island APIs and requires `UseExperimentalWinUI3`. Windows on 0.81 is not supported.
+- Metro's Babel preset should be the `@react-native/babel-preset` that matches your host's RN version. Static ViewConfigs are generated from the NativeComponent specs.
 
-パッケージには Podspec、Fabric Codegen spec、Windows の C++ プロジェクト、autolinking 設定を同梱します。インストール後はネイティブアプリの再ビルドが必要です。未リンクの場合に JS 版へ自動で切り替えることはありません。
+The package bundles a Podspec, Fabric Codegen specs, a Windows C++ project, and autolinking configuration. A native rebuild of your app is required after installation. There is no automatic fallback to the JS version when native linking is missing.
 
 ### macOS
 
-ホストアプリの Fabric を有効にし、deployment target を 14.0 以上に設定します。ホストの macOS ディレクトリで `bundle exec pod install`（Bundler を使わないホストでは `pod install`）を実行してから Xcode で再ビルドしてください。`DesktopNavigation` Pod と、Codegen の `DesktopNavigationHost` component provider が組み込まれます。
+Enable Fabric in your host app and set the deployment target to 14.0 or later. Run `bundle exec pod install` (or plain `pod install` for hosts not using Bundler) in the host's macOS directory, then rebuild in Xcode. This wires in the `DesktopNavigation` Pod and the Codegen `DesktopNavigationHost` component provider.
 
 ### Windows
 
-ホストの `windows/ExperimentalFeatures.props` の `PropertyGroup` に次を設定し、RNW の autolinking とビルドを実行します。既存の他の設定は維持してください。
+Set the following in the `PropertyGroup` of your host's `windows/ExperimentalFeatures.props`, keeping any other existing settings, then run RNW's autolinking and build.
 
 ```xml
 <UseNewArchitecture>true</UseNewArchitecture>
@@ -37,11 +37,11 @@ npx react-native autolink-windows
 npx react-native run-windows
 ```
 
-ライブラリプロジェクトは VS 2022 の v143 ツールセットを指定しています。ホスト側にも対応する Desktop C++ / Windows SDK / RNW のビルド環境が必要です。autolinking が利用できないホストでは `windows/DesktopNavigation/DesktopNavigation.vcxproj` を参照し、`winrt::DesktopNavigation::ReactPackageProvider()` をホストの PackageProviders に追加します。
+The library project targets the VS 2022 v143 toolset. Your host needs a matching Desktop C++ / Windows SDK / RNW build environment. For hosts where autolinking isn't available, reference `windows/DesktopNavigation/DesktopNavigation.vcxproj` directly and add `winrt::DesktopNavigation::ReactPackageProvider()` to the host's PackageProviders.
 
-### JS 版だけを使うホスト
+### Hosts that only use the JS version
 
-JS 版の API 自体にはネイティブホストは不要です。ネイティブプロジェクトの取り込みも不要なら、ホストの `react-native.config.js` の `dependencies` に以下を追加し、対象プラットフォームの autolinking を無効化できます。
+The JS API itself doesn't require a native host. If you don't need to pull in the native project at all, add the following to your host's `react-native.config.js` `dependencies` to disable autolinking for the relevant platforms:
 
 ```js
 '@natsuneko-laboratory/react-native-desktop-navigation': {
@@ -49,7 +49,7 @@ JS 版の API 自体にはネイティブホストは不要です。ネイティ
 },
 ```
 
-## 使用例
+## Example
 
 ```tsx
 import {
@@ -95,18 +95,18 @@ export default function App() {
 }
 ```
 
-`NavigationContainer`、Ref、Hooks、`StackNavigation` / `SidebarNavigation`、保存・復元関数は JS 版と同じ実装です。同じ Container 内で JS 版の Tabs やカスタム Sidebar と組み合わせられます。`/native` は Tabs をエクスポートしません。Tabs は `/` から import してください。
+`NavigationContainer`, the ref, Hooks, `StackNavigation` / `SidebarNavigation`, and the persistence functions are the same implementation as the JS version. You can combine them with the JS version's Tabs or a custom Sidebar inside the same Container. `/native` does not export Tabs; import Tabs from `/` instead.
 
-## スタイルと API
+## Styling and API
 
-各 Native Navigator の `appearance` は以下の色を受け取ります。未指定の値は Container の `theme` の `background` / `text` / `accent` / `surface` を使用します。ネイティブ境界の色は `#RRGGBB` または `#RRGGBBAA` を使ってください。
+Each Native Navigator's `appearance` accepts the following colors. Any value left unspecified falls back to the Container's `theme`'s `background` / `text` / `accent` / `surface`. Use `#RRGGBB` or `#RRGGBBAA` for native boundary colors.
 
-- `backgroundColor`: コンテンツ背景
-- `foregroundColor`: ヘッダーや項目の文字色
-- `accentColor`: macOS の tint、Windows の戻るボタン・選択インジケーター
-- `sidebarBackgroundColor`: Sidebar の背景
+- `backgroundColor`: content background
+- `foregroundColor`: text color for headers and items
+- `accentColor`: macOS tint color; Windows back button and selection indicator
+- `sidebarBackgroundColor`: Sidebar background
 
-値に `null` を指定すると Container の `theme` を使わず、OS の既定の見た目になります。macOS では `sidebarBackgroundColor: null` でサイドバーの半透明マテリアル、`accentColor: null` でシステムのアクセントカラー、`foregroundColor: null` でライト / ダークに追従するラベル色を使います。Windows では各コントロールの既定色を使います。
+Passing `null` for a value skips the Container's `theme` and falls back to the OS default appearance. On macOS, `sidebarBackgroundColor: null` gives a translucent sidebar material, `accentColor: null` uses the system accent color, and `foregroundColor: null` uses a label color that follows light / dark mode. On Windows, each control's own default color is used.
 
 ```tsx
 <Sidebar.Navigator
@@ -114,15 +114,15 @@ export default function App() {
 />
 ```
 
-macOS の Sidebar では、選択中の項目のラベルに `foregroundColor` を適用しません（OS の選択色を維持します）。
+On macOS, the native Sidebar does not apply `foregroundColor` to the label of the selected item (the OS's own selection color is preserved).
 
-全体には `style`、Screen には `sceneStyle` / `contentStyle` を指定できます。OS が描く部品へ任意の `ViewStyle` を直接適用する API ではありません。
+`style` applies to the whole Navigator, and `sceneStyle` / `contentStyle` apply to a Screen. This is not an API for applying an arbitrary `ViewStyle` directly to OS-drawn parts.
 
 ### Stack
 
-`initialRouteName`、`historyBehavior`、`screenOptions`、Screen `options`、型付き params は JS 版と同じです。`title`、`headerShown`、`headerBackTitle` はネイティブヘッダーに反映します。
+`initialRouteName`, `historyBehavior`, `screenOptions`, Screen `options`, and typed params work the same as in the JS version. `title`, `headerShown`, and `headerBackTitle` are reflected in the native header.
 
-`header`、`headerStyle`、`headerTitleStyle`、`headerTintColor`、`headerLeft` / `headerRight` などのカスタムヘッダー指定がある画面では、既存の React Native `StackHeader` に切り替えます。ナビゲーションコンテナはネイティブのままです。
+For a screen that specifies a custom header via `header`, `headerStyle`, `headerTitleStyle`, `headerTintColor`, `headerLeft` / `headerRight`, or similar, rendering falls back to the existing React Native `StackHeader`. The navigation container itself remains native.
 
 ```tsx
 <Stack.Navigator
@@ -136,15 +136,15 @@ macOS の Sidebar では、選択中の項目のラベルに `foregroundColor` �
 </Stack.Navigator>
 ```
 
-現段階では card 表示のみで、`presentation` / `animation` / overlay / dialog の options は提供しません。ネイティブのコンテナと React の Scene を別々にアニメーションさせないよう、SwiftUI の遷移アニメーションも無効化しています。これらが必要な階層には JS 版 Stack を利用できます。
+At this stage, only card presentation is supported; `presentation` / `animation` / overlay / dialog options are not provided. SwiftUI's own transition animations are also disabled, so the native container and the React Scene don't animate independently. Use the JS version's Stack for any part of the tree that needs these.
 
 ### Sidebar
 
-`Navigator` は `initialRouteName`、`defaultCollapsed`、`width`（100 以上の数値）、`appearance`、`style`、`screenOptions`、`renderSidebarFooter` を受け取ります。`Screen` は `label` / `title`、`icon`、`iconSize`、`badge`、`hidden`、`disabled` と共通 Scene options に対応します。`Section title="…"` で見出しを指定できます。
+`Navigator` accepts `initialRouteName`, `defaultCollapsed`, `width` (a number, 100 or greater), `appearance`, `style`, `screenOptions`, and `renderSidebarFooter`. `Screen` supports `label` / `title`, `icon`, `iconSize`, `badge`, `hidden`, `disabled`, and the common Scene options. Use `Section title="…"` for a heading.
 
-選択・開閉は既存の `select` / `navigate` / `collapseSidebar` / `expandSidebar` / `toggleSidebar` と同期します。macOS の幅は SwiftUI に渡す推奨幅です。
+Selection and open/close state stay in sync with the existing `select` / `navigate` / `collapseSidebar` / `expandSidebar` / `toggleSidebar`. The macOS width is the width suggested to SwiftUI.
 
-`icon` は React 要素（Lucide / `react-native-svg` の JSX など）、ネイティブのシステムアイコン、または画像を指定できます。macOS は SF Symbols、Windows は `FontIcon` / `BitmapIcon` をネイティブ項目内に描画します。
+`icon` accepts a React element (e.g. Lucide or `react-native-svg` JSX), a native system icon, or an image. macOS renders SF Symbols and Windows renders `FontIcon` / `BitmapIcon` inside the native item.
 
 ```tsx
 <Sidebar.Screen
@@ -154,7 +154,7 @@ macOS の Sidebar では、選択中の項目のラベルに `foregroundColor` �
     icon: ({ focused, disabled }) => ({
       type: 'system',
       macos: focused ? 'house.fill' : 'house',
-      windows: { glyph: '\uE80F' },
+      windows: { glyph: '' },
       size: 16,
       color: disabled ? '#888888' : '#c4a0ff',
     }),
@@ -162,13 +162,13 @@ macOS の Sidebar では、選択中の項目のラベルに `foregroundColor` �
 />
 ```
 
-`icon` は React 要素、`NativeSidebarIcon` オブジェクト、`null`、または `{ focused, disabled }` を受け取る関数です。`focused` は JS 版と同様に項目の**選択状態**を表します。`null` を返すとアイコンを消せます。`screenOptions.icon` で既定値を設定し、Screen ごとに上書きすることもできます。
+`icon` can be a React element, a `NativeSidebarIcon` object, `null`, or a function receiving `{ focused, disabled }`. As in the JS version, `focused` represents the item's **selected** state. Returning `null` hides the icon. Set a default with `screenOptions.icon` and override it per Screen if needed.
 
-- `type: 'system'`: `macos` に SF Symbols 名、`windows.glyph` に Unicode **文字列**を渡します。Windows の `fontFamily` を省略すると WinUI の OS 標準アイコンフォントを使います。独自フォントを使う場合は `windows: { glyph: '\uE80F', fontFamily: 'My Icon Font' }` のように指定し、ホストアプリ側でそのフォントを導入してください。OS 側の値を省略した場合、その OS では文字のみになります。
-- `size`: 既定値は 16。論理ポイント / DIP 単位です。標準の項目レイアウトに収まるサイズを指定してください。
-- `color`: `#RRGGBB` / `#RRGGBBAA`。省略するとネイティブ項目のスタイルに従います。
+- `type: 'system'`: pass an SF Symbols name in `macos`, and a Unicode **string** in `windows.glyph`. If `fontFamily` is omitted on Windows, WinUI's standard OS icon font is used. To use a custom font, specify it like `windows: { glyph: '', fontFamily: 'My Icon Font' }` and make sure the host app bundles that font. Omitting the value for one OS shows text only on that OS.
+- `size`: defaults to 16. Units are logical points / DIPs. Choose a size that fits the standard item layout.
+- `color`: `#RRGGBB` / `#RRGGBBAA`. If omitted, the native item's own style is used.
 
-独自の画像も利用できます。
+You can also use a custom image.
 
 ```tsx
 options={{
@@ -182,13 +182,13 @@ options={{
 }}
 ```
 
-`source` は Metro の `require()` または `{ uri: '…' }` です。PNG など両 OS で読めるラスター画像を使用してください。`template: true` は画像のアルファを使う単色アイコン、既定の `false` は元の色を維持する画像です。`color` はシステムアイコンと template 画像に適用します。
+`source` is a Metro `require()` or `{ uri: '…' }`. Use a raster image format such as PNG that both OSes can read. `template: true` renders the image as a single-color icon based on its alpha channel; the default `false` preserves the image's original colors. `color` applies to system icons and template images.
 
-画像 URI は HTTP(S) / `file://` に対応し、Windows では `ms-appx:///` / `ms-appdata:///` も指定できます。ホストアプリがそのファイルや URI にアクセスできる必要があります。読み込み失敗時も項目のタイトルと選択操作は残ります。この画像 descriptor は SVG、data URI、認証ヘッダー付き source に対応しません。SVG は以下の React 要素として渡してください。アイコン画像自体は装飾として扱い、アクセシビリティのラベルは項目のタイトルを使います。
+Image URIs support HTTP(S) and `file://`, and on Windows also `ms-appx:///` / `ms-appdata:///`. Your host app must be able to access that file or URI. If loading fails, the item's title and selection still work. This image descriptor does not support SVG, data URIs, or sources requiring auth headers. Pass SVGs as a React element as described below instead. The icon image itself is treated as decorative; the accessibility label uses the item's title.
 
-#### バッジ
+#### Badges
 
-`badge` に数値または文字列を指定すると、項目の末尾にネイティブのバッジを表示します。`0` 以下の数値と空文字列は非表示です。
+Setting `badge` to a number or string shows a native badge at the end of the item. A number `0` or below, and an empty string, hide it.
 
 ```tsx
 <Sidebar.Screen
@@ -198,11 +198,11 @@ options={{
 />
 ```
 
-macOS は SwiftUI の `badge`、Windows は `InfoBadge` を使います。Windows の `InfoBadge` は整数のみ表示できるため、数値以外の文字列はドット表示になります。
+macOS uses SwiftUI's `badge`, and Windows uses `InfoBadge`. Since Windows' `InfoBadge` can only display integers, a non-numeric string falls back to a dot indicator.
 
-#### Lucide / React 要素のアイコン
+#### Lucide / React element icons
 
-アプリ側に `lucide-react-native` と、その依存である `react-native-svg` を導入・ネイティブリンクして使います（[Lucide 公式ガイド](https://lucide.dev/guide/react-native/getting-started)）。本ライブラリの実行時依存には含めません。
+In your app, install and natively link `lucide-react-native` and its dependency `react-native-svg` (see the [official Lucide guide](https://lucide.dev/guide/react-native/getting-started)). Neither is a runtime dependency of this library.
 
 ```tsx
 import { House } from 'lucide-react-native';
@@ -226,29 +226,29 @@ const Sidebar = createSidebarNavigator<{ Home: undefined }>();
 />;
 ```
 
-`icon: <House size={20} color="#c4a0ff" />` のように直接渡すこともできます。`iconSize` は React アイコン用にネイティブ項目内へ確保する正方形の領域で、既定値は 24 ポイント / DIP。`screenOptions.iconSize` でも指定できます。要素は中央に配置し、領域からはみ出す部分は切り抜きます。アイコン自身の `size` や `color` は JSX で指定してください。ネイティブの選択色・無効色は JSX に自動適用しません。descriptor のサイズは従来どおり `icon.size` です。
+You can also pass an element directly, e.g. `icon: <House size={20} color="#c4a0ff" />`. `iconSize` is the square area reserved inside the native item for a React icon, defaulting to 24 points / DIPs; it can also be set via `screenOptions.iconSize`. The element is centered, and anything that overflows the area is clipped. Set the icon's own `size` and `color` in the JSX; native selected/disabled colors are not applied to the JSX automatically. The descriptor's own size is still `icon.size`, unchanged.
 
-React アイコンは元の Fabric ツリー内で描画し、React Context を保持します。ネイティブ側へ送るのは空のアイコン領域のサイズだけで、React 要素や SVG を JSON 化・ラスター画像化しません。ネイティブ側で測定した位置とクリップ領域に追従し、スクロール中は SVG のサイズを維持して切り抜きます。クリックやスクロールはネイティブ項目へ通し、アイコンはアクセシビリティ上は装飾として扱います。macOS の折り畳み中は非表示、Windows はコンパクトペインの表示範囲に従います。
+React icons render inside the original Fabric tree and preserve React Context. Only the size of the empty icon area is sent to the native side — React elements and SVGs are never serialized to JSON or rasterized. They follow the position and clip region measured natively, and keep their SVG size while clipped during scrolling. Clicks and scrolling pass through to the native item, and icons are treated as decorative for accessibility. They are hidden while a macOS sidebar is collapsed, and follow the visible area of a compact Windows pane.
 
-macOS 0.81 / Fabric では、`react-native-svg` 15.15.5 で SVG アイコンの表示を確認済みです。15.15.5 以降を使用してください。既存ホストにも本ライブラリのネイティブコードの再ビルドが必要です。
+SVG icon rendering has been verified on macOS 0.81 / Fabric with `react-native-svg` 15.15.5; use 15.15.5 or later. Existing hosts also need to rebuild this library's native code.
 
-使用例は [`examples/desktop/NativeLucide.tsx`](examples/desktop/NativeLucide.tsx) にあります。
+See [`examples/desktop/NativeLucide.tsx`](examples/desktop/NativeLucide.tsx) for a runnable example.
 
-#### フッター
+#### Footer
 
-`renderSidebarFooter` で、項目リストの下に React のフッター（アカウント表示や設定ボタンなど）を配置できます。
+`renderSidebarFooter` lets you place a React footer (e.g. an account display or settings button) below the item list.
 
 ```tsx
 <Sidebar.Navigator
   renderSidebarFooter={({ collapsed, toggleSidebar }) => (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="設定"
+      accessibilityLabel="Settings"
       focusable
       onPress={openSettings}
       style={{ padding: 12 }}
     >
-      <Text>設定</Text>
+      <Text>Settings</Text>
     </Pressable>
   )}
 >
@@ -256,45 +256,45 @@ macOS 0.81 / Fabric では、`react-native-svg` 15.15.5 で SVG アイコンの�
 </Sidebar.Navigator>
 ```
 
-フッターは元の Fabric ツリー内で描画し、Context・state・操作・アクセシビリティをそのまま扱えます。React 側で測定した自然な高さをネイティブへ送り、macOS はサイドバー列の List の下、Windows は `NavigationView.PaneFooter` にその高さの空領域を確保します。フッターはネイティブが測定した領域の位置と幅に合わせて配置し、測定前は非表示のまま高さだけを計測します。高さはフッターの内容で決まるため、`flex: 1` など親の高さに依存するスタイルは使わないでください。
+The footer renders inside the original Fabric tree, so Context, state, interaction, and accessibility all work as usual. The natural height measured on the React side is sent to the native side, which reserves an empty area of that height below the sidebar column's List on macOS, or in `NavigationView.PaneFooter` on Windows. The footer is positioned to match the area and width measured natively, and stays hidden — with only its height measured — before that first measurement. Because height is driven by the footer's own content, avoid styles like `flex: 1` that depend on a parent's height.
 
-`SidebarFooterProps` の `collapsed`、`toggleSidebar` / `collapseSidebar` / `expandSidebar` は JS 版と同じです。ネイティブ Sidebar は開閉ボタンを OS 側で表示するため、`children` は常に `null` です。サイドバーを閉じている間（macOS の折り畳み、Windows の閉じたペイン）はフッターを表示しません。`renderSidebarFooter` が `null` を返すと領域ごと削除します。
+`SidebarFooterProps`'s `collapsed` and `toggleSidebar` / `collapseSidebar` / `expandSidebar` are the same as in the JS version. Because the native Sidebar shows its own OS-drawn collapse button, `children` is always `null` here. The footer is hidden while the sidebar is closed (collapsed on macOS, or a closed pane on Windows). Returning `null` from `renderSidebarFooter` removes the area entirely.
 
-`renderItemContent`、React 要素の badge、項目ごとの RN style はこの Native Sidebar では提供しません。これらが必要な場合は JS 版 Sidebar を Native Split 内で使用してください。
+`renderItemContent`, ReactNode badges, and per-item RN styles are not provided by this Native Sidebar. If you need them, use the JS version's Sidebar inside a Native Split instead.
 
 ### Split
 
-JS 版と同様に、2〜3 個の `Split.Column` を宣言します。Column は `id`、`component`、`defaultWidth`、`minWidth`、`maxWidth`、`style` / `contentStyle` を受け取ります。`layout(size)` で表示する列を指定でき、非表示の列も React ツリーと Navigation State を保持します。
+As with the JS version, declare 2 or 3 `Split.Column`s. A Column accepts `id`, `component`, `defaultWidth`, `minWidth`, `maxWidth`, and `style` / `contentStyle`. `layout(size)` selects which columns to show; hidden columns keep their React tree and navigation state.
 
-`onColumnResize` はネイティブで測定したコンテンツ幅が変わった列について呼ばれます。ドラッグのほか、ウィンドウのサイズ変更でも通知されます。幅は Store に保存され、復元時はネイティブの推奨幅になります。SwiftUI が決める余白や Divider 幅のため、JS 版と完全に同じピクセル幅にはなりません。
+`onColumnResize` fires for any column whose natively measured content width changed — from a drag, or from a window resize. Widths are saved to the Store, and on restore the native suggested width is used. Because SwiftUI decides its own spacing and divider width, pixel widths won't exactly match the JS version.
 
-ネイティブ Divider の任意描画・非表示、子 Sidebar の collapse と列幅を結びつける JS 版の `collapsible` は提供しません。開閉するナビゲーションペインだけが必要なら Native Sidebar を使ってください。Windows の Divider は Thumb によるドラッグと、フォーカス時の左右矢印キーに対応します。
+Arbitrary native divider rendering / hiding, and the JS version's `collapsible` (which ties a child Sidebar's collapse state to the column width), are not provided. If you only need a collapsible navigation pane, use the Native Sidebar instead. The Windows divider supports drag via its Thumb, and left/right arrow keys when focused.
 
-## ウィンドウとの関係 (macOS)
+## Relationship to the window (macOS)
 
-ネイティブのホストは React Native のレイアウトに埋め込まれたビューとして振る舞います。サイズは Yoga が決め、SwiftUI の内容サイズでウィンドウの大きさを制約しません。また、`NSWindowStyleMaskFullSizeContentView` などによるウィンドウのセーフエリア（透過タイトルバーの領域）はホストのスロット配置に適用しません。タイトルバーの下にコンテンツを置く場合の余白は React 側で調整してください。なお、Sidebar の詳細列や Split の列には、SwiftUI の `NavigationSplitView` 自身が確保するツールバー領域が引き続き反映されます。
+The native host behaves as a view embedded in React Native's layout. Yoga determines its size; SwiftUI's content size does not constrain the window's size. Window safe areas from things like `NSWindowStyleMaskFullSizeContentView` (the region under a transparent title bar) are not applied to the host's slot placement — adjust padding on the React side if you place content under the title bar. Note that the toolbar area SwiftUI's `NavigationSplitView` itself reserves is still reflected in the Sidebar's detail column and in Split columns.
 
-## 状態同期
+## State synchronization
 
-ネイティブの戻る・選択・開閉は、共通 Store への action の要求として扱います。ネイティブの履歴で JS の状態を直接上書きしません。`beforeRemove` が戻る操作を抑止した場合も、現在の状態をネイティブへ再通知します。設定の revision と一致しない遅延イベントは破棄します。
+Native back, selection, and open/close actions are treated as requests to dispatch an action to the shared Store; native history never overwrites JS state directly. Even if `beforeRemove` prevents a back action, the current state is re-notified to the native side. Delayed events that don't match the current settings revision are discarded.
 
-ネイティブのレイアウト通知後にフォーカス復元を行います。`inactiveBehavior`、保存・復元、`historyBehavior="desktop"` の Back / Forward は共通実装を使います。
+Focus restoration happens after the native layout notification. `inactiveBehavior`, persistence, and Back / Forward under `historyBehavior="desktop"` all use the shared implementation.
 
-## 検証範囲
+## Verification scope
 
 ```sh
 npm run check
 npm run check:native-macos
 ```
 
-`check` は TypeScript、Router / Store / React UI テスト、ビルド、Fabric Codegen を実行します。Native UI テストでは `beforeRemove`、古いイベントの破棄、画面保持、履歴復元、Sidebar の選択・アイコン切り替えと画像 source の解決、Split の測定値、JS Navigator とのネストを確認します。
+`check` runs TypeScript, Router / Store / React UI tests, the build, and Fabric Codegen. The Native UI tests cover `beforeRemove`, discarding stale events, screen retention, history restoration, Sidebar selection and icon switching, image source resolution, Split measurements, and nesting with JS Navigators.
 
-`check:native-macos` は macOS / Xcode が必要です。SwiftUI 実装をコンパイルし、AppKit ウィンドウ内で Stack / Sidebar（SF Symbols・ローカル画像のアイコンを含む）/ 3 列 Split のレイアウト通知を検査します。ウィンドウは画面には表示しません。
+`check:native-macos` requires macOS / Xcode. It compiles the SwiftUI implementation and inspects layout notifications for Stack / Sidebar (including SF Symbols and local-image icons) / 3-column Split inside an AppKit window. The window is never shown on screen.
 
-このリポジトリには RN のネイティブホストアプリを同梱していません。macOS 0.81 / Fabric と `react-native-svg` 15.15.5 での SVG アイコン表示は利用者のホストアプリで確認済みです。**Windows の C++ ビルド・実機動作は未検証**です。現段階では experimental な実装として、ホストアプリで次を確認してください。
+This repository does not include an RN native host app. SVG icon rendering on macOS 0.81 / Fabric with `react-native-svg` 15.15.5 has been verified in a user's host app. **Windows C++ builds and on-device behavior are unverified.** As an experimental implementation at this stage, verify the following in your own host app:
 
-- Native component の登録、ネストしたコンテナの配置、ウィンドウのリサイズ。
-- ネイティブの項目選択、戻る、ペイン開閉と JS 側の state / focus の一致。
-- VoiceOver / Narrator、キーボード操作、Windows の XAML Island と React Scene の重なり・入力配送。
+- Native component registration, placement of nested containers, and window resizing.
+- Native item selection, back navigation, and pane open/close staying in sync with JS state / focus.
+- VoiceOver / Narrator, keyboard interaction, and input delivery / overlap between the Windows XAML Island and the React Scene.
 
-実装時に参照した公式資料: [RN macOS native development](https://microsoft.github.io/react-native-macos/docs/guides/native-development)、[RNW XAML Island component sample](https://github.com/microsoft/react-native-windows/blob/0.82-stable/packages/sample-custom-component/windows/SampleCustomComponent/CalendarView.cpp)、[NavigationView](https://learn.microsoft.com/en-us/windows/apps/design/controls/navigationview)。
+Official references used during implementation: [RN macOS native development](https://microsoft.github.io/react-native-macos/docs/guides/native-development), the [RNW XAML Island component sample](https://github.com/microsoft/react-native-windows/blob/0.82-stable/packages/sample-custom-component/windows/SampleCustomComponent/CalendarView.cpp), and [NavigationView](https://learn.microsoft.com/en-us/windows/apps/design/controls/navigationview).

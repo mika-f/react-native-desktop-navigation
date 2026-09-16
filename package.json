@@ -32,7 +32,8 @@
     "windows",
     "DesktopNavigation.podspec",
     "react-native.config.js",
-    "NATIVE.md"
+    "NATIVE.md",
+    "docs"
   ],
   "sideEffects": false,
   "scripts": {

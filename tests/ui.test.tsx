@@ -590,7 +590,7 @@ it('customizes Stack header parts, scene visibility, and themed dialog surfaces'
           headerLeftContainerStyle: { paddingLeft: 20 },
           headerRightContainerStyle: { paddingRight: 22 },
           headerTintColor: '#abcdef',
-          headerBackTitle: '戻る',
+          headerBackTitle: 'Back',
           headerBackTitleStyle: { fontWeight: '900' },
           headerBackButtonStyle: { padding: 12 },
           sceneStyle: { display: 'flex', padding: 4 },
@@ -611,7 +611,7 @@ it('customizes Stack header parts, scene visibility, and themed dialog surfaces'
     </NavigationContainer>,
   );
   act(() => nav.navigate('Post', { id: 'design' }));
-  const back = button('戻る');
+  const back = button('Back');
   expect(StyleSheet.flatten(back.props.style).padding).toBe(12);
   const backText = back.findAll((n) => String(n.type) === 'Text')[0];
   expect(StyleSheet.flatten(backText.props.style)).toMatchObject({
@@ -641,7 +641,7 @@ it('customizes Stack header parts, scene visibility, and themed dialog surfaces'
     borderRadius: 20,
     maxWidth: 480,
   });
-  click('戻る');
+  click('Back');
   expect(nav.canGoBack()).toBe(false);
   act(() => nav.navigate('Profile', { userId: '1' }));
   expect(
