@@ -211,7 +211,25 @@ export function NativeSurface({
   }
   const [acknowledgement, acknowledge] = React.useReducer((n) => n + 1, 0);
   const serialized = JSON.stringify(configuration);
-  const version = React.useRef({ serialized, acknowledgement, revision: 0 });
+  // Selection and acknowledgements do not invalidate sidebar icon positions.
+  // Other configuration changes may move/resize rows, so await fresh geometry.
+  const iconLayoutConfiguration = JSON.stringify({
+    ...configuration,
+    activeKey: undefined,
+    items: configuration.items.map((item) => ({
+      ...item,
+      // Native icons occupy fixed square slots. Switching a symbol/glyph,
+      // image or tint on selection changes its contents, not row geometry.
+      icon: item.icon && { type: item.icon.type, size: item.icon.size },
+    })),
+  });
+  const version = React.useRef({
+    serialized,
+    acknowledgement,
+    revision: 0,
+    iconLayoutConfiguration,
+    iconLayoutRevision: 0,
+  });
   if (
     version.current.serialized !== serialized ||
     version.current.acknowledgement !== acknowledgement
@@ -220,10 +238,21 @@ export function NativeSurface({
       serialized,
       acknowledgement,
       revision: version.current.revision + 1,
+      iconLayoutConfiguration,
+      iconLayoutRevision:
+        version.current.iconLayoutRevision +
+        Number(
+          version.current.iconLayoutConfiguration !== iconLayoutConfiguration,
+        ),
     };
   }
   const revision = version.current.revision;
-  const [layout, setLayout] = React.useState<LayoutEvent | null>(null);
+  const iconLayoutRevision = version.current.iconLayoutRevision;
+  const [measurement, setMeasurement] = React.useState<{
+    event: LayoutEvent;
+    iconLayoutRevision: number;
+  } | null>(null);
+  const layout = measurement?.event;
   const footerFrame = layout?.footerFrame;
   const footerPlaced = !!footerFrame && footerFrame.width > 0;
   return (
@@ -236,10 +265,10 @@ export function NativeSurface({
           if (!message || message.revision !== revision) return;
           if (message.type === 'layout') {
             onMeasurements?.(message.frames);
-            setLayout((previous) =>
-              JSON.stringify(previous) === JSON.stringify(message)
+            setMeasurement((previous) =>
+              JSON.stringify(previous?.event) === JSON.stringify(message)
                 ? previous
-                : message,
+                : { event: message, iconLayoutRevision },
             );
           } else {
             onRequest(message);
@@ -321,10 +350,11 @@ export function NativeSurface({
         style={StyleSheet.absoluteFillObject}
       >
         {icons.map((icon) => {
-          // Never display a removed/resized icon at a previous revision's position.
+          // Keep SVGs mounted across selection-only revisions, but never reuse
+          // positions after a layout configuration change (even if reverted).
           const geometry =
-            layout?.revision === revision
-              ? layout.iconFrames?.[icon.key]
+            measurement?.iconLayoutRevision === iconLayoutRevision
+              ? layout?.iconFrames?.[icon.key]
               : undefined;
           if (
             !geometry ||

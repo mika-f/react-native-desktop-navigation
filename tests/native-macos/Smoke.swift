@@ -108,6 +108,31 @@ struct Smoke {
     applySidebar()
     precondition(footerFrame() == nil, "Removed footer must not report a frame")
     print("Native sidebar footer slot passed: reservation, collapse, removal")
+    // A selected SF Symbol changes its contents, but must not move or drop
+    // the neighboring React overlay, even in intermediate layout reports.
+    func mixedItems(_ selected: Bool) -> [[String: Any]] {
+      [
+        ["key": "svg", "title": "SVG", "icon": ["type": "react", "size": 24]],
+        ["key": "symbol", "title": "Symbol", "icon": ["type": "symbol", "name": selected ? "house.fill" : "house", "size": 20, "color": selected ? "#9966ff" : "#888888"]],
+        ["key": "plain", "title": "Plain"]
+      ]
+    }
+    sidebar = ["mode": "sidebar", "activeKey": "svg", "revision": 12,
+      "paneWidth": 240, "items": mixedItems(false)]
+    applySidebar()
+    guard let svgGeometry = iconFrames()["svg"], svgGeometry["clip"]!["height"]! > 0 else { fatalError("Missing mixed sidebar SVG geometry") }
+    for (index, key) in ["symbol", "svg", "plain", "symbol", "svg"].enumerated() {
+      sidebar["revision"] = 13 + index
+      sidebar["activeKey"] = key
+      sidebar["items"] = mixedItems(key == "symbol")
+      applySidebar()
+      precondition(!layouts.isEmpty, "Selection must report its new revision")
+      for layout in layouts {
+        let icons = layout["iconFrames"] as? [String: [String: [String: Double]]]
+        precondition(icons?["svg"] == svgGeometry, "Mixed selection must preserve SVG geometry: \(layout)")
+      }
+    }
+    print("Native mixed sidebar selection passed: SVG, SF Symbols and plain rows")
     print("SwiftUI native layout smoke passed")
   }
 }

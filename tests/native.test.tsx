@@ -18,7 +18,11 @@ import {
   restoreNavigationState,
 } from '../src/native';
 import { createTabNavigator } from '../src';
-import { NativeSurface, parseNativeEvent } from '../src/native/host';
+import {
+  NativeSurface,
+  parseNativeEvent,
+  type NativeConfiguration,
+} from '../src/native/host';
 import { resolveNativeIcon } from '../src/native/icons';
 
 // Exercise the real Lucide components; only the platform SVG renderer is mocked.
@@ -568,11 +572,20 @@ it.each(['macos', 'windows'])(
     const Sidebar = createSidebarNavigator<{
       A: undefined;
       B: undefined;
+      System: undefined;
       Hidden: undefined;
     }>();
     const IconColor = React.createContext('#000000');
+    const mounted = vi.fn();
+    const unmounted = vi.fn();
     function ContextIcon({ focused }: { focused: boolean }) {
       const color = React.useContext(IconColor);
+      React.useEffect(() => {
+        mounted();
+        return () => {
+          unmounted();
+        };
+      }, []);
       return (
         <House
           size={20}
@@ -597,6 +610,19 @@ it.each(['macos', 'windows'])(
           <Sidebar.Screen name="A" component={() => null} />
           <Sidebar.Screen name="B" component={() => null} />
           <Sidebar.Screen
+            name="System"
+            component={() => null}
+            options={{
+              icon: ({ focused }) => ({
+                type: 'system',
+                macos: focused ? 'house.fill' : 'house',
+                windows: { glyph: focused ? '\uE80F' : '\uE8A5' },
+                color: focused ? '#c4a0ff' : '#888888',
+                size: 20,
+              }),
+            }}
+          />
+          <Sidebar.Screen
             name="Hidden"
             component={() => null}
             options={{ hidden: true }}
@@ -614,7 +640,7 @@ it.each(['macos', 'windows'])(
     const first = configuration();
     expect(first.items[0].icon).toEqual({ type: 'react', size: 20 });
     expect(host().props.configuration).not.toContain('ContextIcon');
-    const [a, b] = first.items.map((i: { key: string }) => i.key);
+    const [a, b, system] = first.items.map((i: { key: string }) => i.key);
     const geometry = {
       [a]: {
         frame: { x: 12, y: -5, width: 20, height: 20 },
@@ -654,23 +680,156 @@ it.each(['macos', 'windows'])(
       accessibilityElementsHidden: true,
       importantForAccessibility: 'no-hide-descendants',
     });
+    const initialSvgs = svgs();
     event({ type: 'select', key: b });
+    expect(svgs()).toEqual(initialSvgs);
+    expect(svgs()[0].props.stroke).toBe('#888888');
+    expect(svgs()[1].props.stroke).toBe('#c4a0ff');
     event({
       type: 'layout',
       frames: {},
-      iconFrames: geometry,
+      iconFrames: {},
       revision: first.revision,
     });
-    expect(svgs()).toHaveLength(0); // Old native geometry cannot resurrect a stale overlay.
+    expect(svgs()).toEqual(initialSvgs); // Stale reports cannot clear retained icons.
     event({ type: 'layout', frames: {}, iconFrames: geometry });
-    expect(svgs()[0].props.stroke).toBe('#888888');
-    expect(svgs()[1].props.stroke).toBe('#c4a0ff');
+    event({ type: 'select', key: b }); // Acknowledging a no-op also retains icons.
+    event({ type: 'select', key: a });
+    expect(svgs()).toEqual(initialSvgs);
+    expect(svgs()[0].props.stroke).toBe('#c4a0ff');
+    for (const key of [system, b, system, a]) {
+      const previousRevision = configuration().revision;
+      event({ type: 'select', key });
+      expect(configuration().activeKey).toBe(key);
+      expect(configuration().items[2].icon).toMatchObject({
+        ...(os === 'macos'
+          ? { name: key === system ? 'house.fill' : 'house' }
+          : { glyph: key === system ? '\uE80F' : '\uE8A5' }),
+        color: key === system ? '#c4a0ff' : '#888888',
+      });
+      expect(svgs()).toEqual(initialSvgs);
+      expect(svgs()[0].props.stroke).toBe(key === a ? '#c4a0ff' : '#888888');
+      expect(svgs()[1].props.stroke).toBe(key === b ? '#c4a0ff' : '#888888');
+      event({
+        type: 'layout',
+        frames: {},
+        iconFrames: {},
+        revision: previousRevision,
+      });
+      expect(svgs()).toEqual(initialSvgs);
+      event({ type: 'layout', frames: {}, iconFrames: geometry });
+      expect(svgs()).toEqual(initialSvgs);
+    }
+    expect(mounted).toHaveBeenCalledTimes(2);
+    expect(unmounted).not.toHaveBeenCalled();
     event({ type: 'layout', frames: {}, iconFrames: {} });
     expect(svgs()).toHaveLength(0);
     event({ type: 'layout', frames: {}, iconFrames: geometry });
     act(() => remove());
     expect(svgs()).toHaveLength(0);
     expect(configuration().items[0].icon).toBeUndefined();
+  },
+);
+
+it.each([
+  'icon-size',
+  'native-icon-size',
+  'icon-kind',
+  'icon-removal',
+  'hidden-row',
+  'title',
+  'badge',
+  'pane-width',
+  'footer',
+  'collapse',
+  'reorder',
+])(
+  'invalidates React icon geometry after %s changes, including a revert',
+  (change) => {
+    const original: NativeConfiguration = {
+      mode: 'sidebar',
+      activeKey: 'a',
+      items: [
+        { key: 'a', title: 'a', icon: { type: 'react', size: 20 } },
+        {
+          key: 'b',
+          title: 'b',
+          icon: { type: 'symbol', name: 'house', size: 20 },
+        },
+      ],
+    };
+    const changed: NativeConfiguration = {
+      ...original,
+      items: original.items.map((item) => ({ ...item })),
+    };
+    switch (change) {
+      case 'icon-size':
+        changed.items[0].icon = { type: 'react', size: 32 };
+        break;
+      case 'native-icon-size':
+        changed.items[1].icon = { type: 'symbol', name: 'house', size: 32 };
+        break;
+      case 'icon-kind':
+        changed.items[0].icon = { type: 'symbol', name: 'house', size: 20 };
+        break;
+      case 'icon-removal':
+        changed.items[1].icon = undefined;
+        break;
+      case 'hidden-row':
+        changed.items[1].hidden = true;
+        break;
+      case 'title':
+        changed.items[0].title = 'Updated title';
+        break;
+      case 'badge':
+        changed.items[0].badge = '99';
+        break;
+      case 'pane-width':
+        changed.paneWidth = 300;
+        break;
+      case 'footer':
+        changed.footerHeight = 60;
+        break;
+      case 'collapse':
+        changed.collapsed = true;
+        break;
+      case 'reorder':
+        changed.items.reverse();
+        break;
+    }
+    const tree = (config: NativeConfiguration) => (
+      <NavigationContainer>
+        <NativeSurface
+          configuration={config}
+          slots={[]}
+          icons={[{ key: 'a', content: <House size={20} /> }]}
+          onRequest={() => {}}
+        />
+      </NavigationContainer>
+    );
+    render(tree(original));
+    const rect = { x: 12, y: 10, width: 20, height: 20 };
+    const measured = {
+      type: 'layout',
+      frames: {},
+      iconFrames: { a: { frame: rect, clip: rect } },
+    };
+    const svgs = () => renderer!.root.findAll((n) => String(n.type) === 'Svg');
+    event(measured);
+    expect(svgs()).toHaveLength(1);
+    const previousRevision = configuration().revision;
+    act(() => renderer!.update(tree(changed)));
+    expect(svgs()).toHaveLength(0);
+    event({ ...measured, revision: previousRevision });
+    expect(svgs()).toHaveLength(0);
+    // Returning to the same configuration must not resurrect old measurements.
+    act(() => renderer!.update(tree(original)));
+    expect(svgs()).toHaveLength(0);
+    event(measured);
+    expect(svgs()).toHaveLength(1);
+    const icon = svgs()[0];
+    act(() => renderer!.update(tree({ ...original, activeKey: 'b' })));
+    expect(svgs()[0]).toBe(icon);
   },
 );
 
