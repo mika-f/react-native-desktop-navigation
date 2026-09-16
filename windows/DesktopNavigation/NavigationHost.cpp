@@ -379,6 +379,15 @@ struct Host : implements<Host, IInspectable> {
         if (it == menu.end()) continue;
         it->second.Content(box_value(item.GetNamedString(L"title")));
         it->second.IsEnabled(!item.GetNamedBoolean(L"disabled", false));
+        auto badge = item.GetNamedString(L"badge", L"");
+        if (badge.empty()) it->second.InfoBadge(nullptr);
+        else {
+          // InfoBadge only displays integers; other strings render as a dot.
+          InfoBadge info; wchar_t *end = nullptr;
+          auto value = std::wcstol(badge.c_str(), &end, 10);
+          if (end && *end == L'\0' && value > 0) info.Value(static_cast<int32_t>(value));
+          it->second.InfoBadge(info);
+        }
         auto iconJSON = item.HasKey(L"icon") ? item.GetNamedObject(L"icon").Stringify() : hstring{};
         auto oldIcon = iconConfigurations.find(it->first);
         if (oldIcon == iconConfigurations.end() || oldIcon->second != iconJSON) {

@@ -269,6 +269,37 @@ it('filters hidden/disabled native selections and synchronizes sidebar collapse 
   expect(configuration().items[0].section).toBe('Workspace');
 });
 
+it('passes sidebar badges and lets null appearance colors fall back to OS defaults', () => {
+  const Sidebar = createSidebarNavigator<{
+    A: undefined;
+    B: undefined;
+    C: undefined;
+  }>();
+  const Page = () => null;
+  const tree = (count: number) => (
+    <NavigationContainer>
+      <Sidebar.Navigator
+        appearance={{ sidebarBackgroundColor: null, accentColor: '#ff88b8' }}
+      >
+        <Sidebar.Screen name="A" component={Page} options={{ badge: count }} />
+        <Sidebar.Screen name="B" component={Page} options={{ badge: 'New' }} />
+        <Sidebar.Screen name="C" component={Page} options={{ badge: '' }} />
+      </Sidebar.Navigator>
+    </NavigationContainer>
+  );
+  render(tree(3));
+  expect(configuration().items.map((i: { badge?: string }) => i.badge)).toEqual(
+    ['3', 'New', undefined],
+  );
+  expect(configuration().appearance).toEqual({
+    backgroundColor: '#ffffff',
+    foregroundColor: '#202124',
+    accentColor: '#ff88b8',
+  });
+  act(() => renderer!.update(tree(0)));
+  expect(configuration().items[0].badge).toBeUndefined();
+});
+
 it('updates split widths through the Router and retains hidden columns through responsive layouts', () => {
   const Split = createSplitNavigator();
   const resize = vi.fn();

@@ -29,6 +29,8 @@ export interface NativeSidebarScreenOptions extends CommonScreenOptions {
   iconSize?: number;
   hidden?: boolean;
   disabled?: boolean;
+  /** Native item badge. Numbers <= 0 and empty strings hide it. */
+  badge?: number | string;
 }
 export interface NativeSidebarNavigatorProps {
   children: React.ReactNode;
@@ -41,6 +43,11 @@ export interface NativeSidebarNavigatorProps {
   screenOptions?: NativeSidebarScreenOptions;
   /** React content below the native item list. `children` is always null. */
   renderSidebarFooter?: (props: SidebarFooterProps) => React.ReactNode;
+}
+function resolveBadge(badge: number | string | undefined) {
+  if (typeof badge === 'number')
+    return Number.isFinite(badge) && badge > 0 ? String(badge) : undefined;
+  return typeof badge === 'string' && badge !== '' ? badge : undefined;
 }
 export function createSidebarNavigator<
   P extends ParamListBase = ParamListBase,
@@ -157,6 +164,7 @@ export function createSidebarNavigator<
               disabled: i.options.disabled,
               section: i.definition.section?.title,
               icon: i.nativeIcon,
+              badge: resolveBadge(i.options.badge),
             })),
             activeKey: state.activeRouteKey,
             collapsed: state.collapsed,

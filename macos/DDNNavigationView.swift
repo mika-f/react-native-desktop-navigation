@@ -8,6 +8,7 @@ private struct Item: Decodable, Identifiable {
   var hidden: Bool?
   var section: String?
   var icon: SidebarIcon?
+  var badge: String?
   var id: String { key }
 }
 // Resolved descriptors are shared with the Fabric JSON configuration.
@@ -96,6 +97,12 @@ private func color(_ value: String?, fallback: Color) -> Color {
   return Color(.sRGB, red: Double((rgba >> 24) & 255) / 255,
     green: Double((rgba >> 16) & 255) / 255,
     blue: Double((rgba >> 8) & 255) / 255, opacity: Double(rgba & 255) / 255)
+}
+private extension View {
+  /// Omitted appearance colors keep the adaptive system style instead of a fixed color.
+  @ViewBuilder func foregroundStyle(hex value: String?) -> some View {
+    if let value { foregroundStyle(color(value, fallback: .primary)) } else { self }
+  }
 }
 private final class NavigationModel: ObservableObject {
   @Published var configuration = Configuration()
@@ -228,8 +235,10 @@ private struct NavigationRoot: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .foregroundStyle(color(config.appearance?.foregroundColor, fallback: .primary))
-    .tint(color(config.appearance?.accentColor, fallback: .accentColor))
+    // Sidebar rows apply the foreground individually so that selected rows keep
+    // the system's selected label color.
+    .foregroundStyle(hex: config.mode == "sidebar" ? nil : config.appearance?.foregroundColor)
+    .tint(config.appearance?.accentColor.map { color($0, fallback: .accentColor) })
     .background(color(config.appearance?.backgroundColor, fallback: Color(nsColor: .windowBackgroundColor)))
     .coordinateSpace(name: "DDNNavigation")
     // RN scenes are composited over the measured native content slots. Avoid
@@ -289,15 +298,16 @@ private struct NavigationRoot: View {
             }
             Group {
               if let icon = item.icon {
-                Label { Text(item.title) } icon: {
+                Label { title(item) } icon: {
                   if icon.type == "react" {
                     ReactIconAnchor(key: item.key, model: model)
                       .frame(width: icon.size, height: icon.size).accessibilityHidden(true)
                   } else { SidebarIconView(icon: icon) }
                 }
                   .labelStyle(.titleAndIcon)
-              } else { Text(item.title) }
+              } else { title(item) }
             }
+            .badge(item.badge.map { Text($0) })
             .tag(item.key).disabled(item.disabled == true)
             .selectionDisabled(item.disabled == true)
           }
@@ -308,9 +318,15 @@ private struct NavigationRoot: View {
           FooterSlot().frame(height: height)
         }
       }
-      .background(color(config.appearance?.sidebarBackgroundColor, fallback: Color(nsColor: .controlBackgroundColor)))
+      // Without an explicit color, keep the translucent system sidebar material.
+      .background(config.appearance?.sidebarBackgroundColor.map { color($0, fallback: .clear) } ?? .clear)
       .navigationSplitViewColumnWidth(min: 100, ideal: config.paneWidth ?? 240, max: 600)
     } detail: { ContentSlot(id: config.activeKey) }
+  }
+  // Only the label is tinted, so selection neither overrides the system's selected
+  // label color nor recreates native icon anchors.
+  func title(_ item: Item) -> some View {
+    Text(item.title).foregroundStyle(hex: item.key == config.activeKey ? nil : config.appearance?.foregroundColor)
   }
   @ViewBuilder func column(_ value: Column) -> some View {
     ContentSlot(id: value.key).navigationSplitViewColumnWidth(
@@ -348,6 +364,11 @@ public final class DDNNavigationView: NSView {
     hosting = NSHostingView(rootView: NavigationRoot(model: model))
     hosting.frame = bounds
     hosting.autoresizingMask = [.width, .height]
+    // This view is embedded in an RN layout: Yoga owns its size, and React places
+    // scenes in host coordinates. Do not let SwiftUI inset content for window
+    // safe areas (e.g. a full-size content title bar) or constrain the window.
+    hosting.safeAreaRegions = []
+    hosting.sizingOptions = []
     addSubview(hosting)
     model.host = self
     // NSClipView sends bounds changes while scrolling, even without a SwiftUI

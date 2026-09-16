@@ -13,11 +13,15 @@ import type { ResolvedNativeIcon } from './icons';
 import { useNavigationTheme } from '../core/context';
 
 export interface NativeAppearance {
-  /** Hex colors, e.g. #202124 or #202124ff. Native controls retain OS interaction states. */
-  backgroundColor?: string;
-  foregroundColor?: string;
-  accentColor?: string;
-  sidebarBackgroundColor?: string;
+  /**
+   * Hex colors, e.g. #202124 or #202124ff. Native controls retain OS interaction states.
+   * `null` skips the Container theme and uses the OS default (e.g. the macOS
+   * sidebar material, the system accent color, or the adaptive label color).
+   */
+  backgroundColor?: string | null;
+  foregroundColor?: string | null;
+  accentColor?: string | null;
+  sidebarBackgroundColor?: string | null;
 }
 export interface NativeItem {
   key: string;
@@ -26,6 +30,7 @@ export interface NativeItem {
   hidden?: boolean;
   section?: string;
   icon?: ResolvedNativeIcon;
+  badge?: string;
 }
 export interface NativeColumn {
   key: string;
@@ -184,18 +189,22 @@ export function NativeSurface({
       'DesktopNavigationHost is not registered. Install the desktop native sources, enable Fabric, and rebuild the app. See the /native installation guide.',
     );
   const { colors } = useNavigationTheme();
-  configuration = {
-    ...configuration,
-    appearance: {
+  // Omitted keys fall back to OS defaults natively, so `null` is simply dropped.
+  const appearance = Object.fromEntries(
+    Object.entries({
       backgroundColor: colors.background,
       foregroundColor: colors.text,
       accentColor: colors.accent,
       sidebarBackgroundColor: colors.surface,
       ...configuration.appearance,
-    },
-  };
-  for (const color of Object.values(configuration.appearance!)) {
-    if (color !== undefined && !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color))
+    }).filter(([, color]) => color != null),
+  ) as NativeAppearance;
+  configuration = { ...configuration, appearance };
+  for (const color of Object.values(appearance)) {
+    if (
+      typeof color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)
+    )
       throw new Error(
         'Native navigation appearance requires #RRGGBB or #RRGGBBAA colors.',
       );

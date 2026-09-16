@@ -106,6 +106,16 @@ export default function App() {
 - `accentColor`: macOS の tint、Windows の戻るボタン・選択インジケーター
 - `sidebarBackgroundColor`: Sidebar の背景
 
+値に `null` を指定すると Container の `theme` を使わず、OS の既定の見た目になります。macOS では `sidebarBackgroundColor: null` でサイドバーの半透明マテリアル、`accentColor: null` でシステムのアクセントカラー、`foregroundColor: null` でライト / ダークに追従するラベル色を使います。Windows では各コントロールの既定色を使います。
+
+```tsx
+<Sidebar.Navigator
+  appearance={{ sidebarBackgroundColor: null, foregroundColor: null }}
+/>
+```
+
+macOS の Sidebar では、選択中の項目のラベルに `foregroundColor` を適用しません（OS の選択色を維持します）。
+
 全体には `style`、Screen には `sceneStyle` / `contentStyle` を指定できます。OS が描く部品へ任意の `ViewStyle` を直接適用する API ではありません。
 
 ### Stack
@@ -130,7 +140,7 @@ export default function App() {
 
 ### Sidebar
 
-`Navigator` は `initialRouteName`、`defaultCollapsed`、`width`（100 以上の数値）、`appearance`、`style`、`screenOptions`、`renderSidebarFooter` を受け取ります。`Screen` は `label` / `title`、`icon`、`iconSize`、`hidden`、`disabled` と共通 Scene options に対応します。`Section title="…"` で見出しを指定できます。
+`Navigator` は `initialRouteName`、`defaultCollapsed`、`width`（100 以上の数値）、`appearance`、`style`、`screenOptions`、`renderSidebarFooter` を受け取ります。`Screen` は `label` / `title`、`icon`、`iconSize`、`badge`、`hidden`、`disabled` と共通 Scene options に対応します。`Section title="…"` で見出しを指定できます。
 
 選択・開閉は既存の `select` / `navigate` / `collapseSidebar` / `expandSidebar` / `toggleSidebar` と同期します。macOS の幅は SwiftUI に渡す推奨幅です。
 
@@ -175,6 +185,20 @@ options={{
 `source` は Metro の `require()` または `{ uri: '…' }` です。PNG など両 OS で読めるラスター画像を使用してください。`template: true` は画像のアルファを使う単色アイコン、既定の `false` は元の色を維持する画像です。`color` はシステムアイコンと template 画像に適用します。
 
 画像 URI は HTTP(S) / `file://` に対応し、Windows では `ms-appx:///` / `ms-appdata:///` も指定できます。ホストアプリがそのファイルや URI にアクセスできる必要があります。読み込み失敗時も項目のタイトルと選択操作は残ります。この画像 descriptor は SVG、data URI、認証ヘッダー付き source に対応しません。SVG は以下の React 要素として渡してください。アイコン画像自体は装飾として扱い、アクセシビリティのラベルは項目のタイトルを使います。
+
+#### バッジ
+
+`badge` に数値または文字列を指定すると、項目の末尾にネイティブのバッジを表示します。`0` 以下の数値と空文字列は非表示です。
+
+```tsx
+<Sidebar.Screen
+  name="Notifications"
+  component={Notifications}
+  options={{ badge: unreadCount }}
+/>
+```
+
+macOS は SwiftUI の `badge`、Windows は `InfoBadge` を使います。Windows の `InfoBadge` は整数のみ表示できるため、数値以外の文字列はドット表示になります。
 
 #### Lucide / React 要素のアイコン
 
@@ -236,7 +260,7 @@ macOS 0.81 / Fabric では、`react-native-svg` 15.15.5 で SVG アイコンの�
 
 `SidebarFooterProps` の `collapsed`、`toggleSidebar` / `collapseSidebar` / `expandSidebar` は JS 版と同じです。ネイティブ Sidebar は開閉ボタンを OS 側で表示するため、`children` は常に `null` です。サイドバーを閉じている間（macOS の折り畳み、Windows の閉じたペイン）はフッターを表示しません。`renderSidebarFooter` が `null` を返すと領域ごと削除します。
 
-`renderItemContent`、React badge、項目ごとの RN style はこの Native Sidebar では提供しません。これらが必要な場合は JS 版 Sidebar を Native Split 内で使用してください。
+`renderItemContent`、React 要素の badge、項目ごとの RN style はこの Native Sidebar では提供しません。これらが必要な場合は JS 版 Sidebar を Native Split 内で使用してください。
 
 ### Split
 
@@ -245,6 +269,10 @@ JS 版と同様に、2〜3 個の `Split.Column` を宣言します。Column は
 `onColumnResize` はネイティブで測定したコンテンツ幅が変わった列について呼ばれます。ドラッグのほか、ウィンドウのサイズ変更でも通知されます。幅は Store に保存され、復元時はネイティブの推奨幅になります。SwiftUI が決める余白や Divider 幅のため、JS 版と完全に同じピクセル幅にはなりません。
 
 ネイティブ Divider の任意描画・非表示、子 Sidebar の collapse と列幅を結びつける JS 版の `collapsible` は提供しません。開閉するナビゲーションペインだけが必要なら Native Sidebar を使ってください。Windows の Divider は Thumb によるドラッグと、フォーカス時の左右矢印キーに対応します。
+
+## ウィンドウとの関係 (macOS)
+
+ネイティブのホストは React Native のレイアウトに埋め込まれたビューとして振る舞います。サイズは Yoga が決め、SwiftUI の内容サイズでウィンドウの大きさを制約しません。また、`NSWindowStyleMaskFullSizeContentView` などによるウィンドウのセーフエリア（透過タイトルバーの領域）はホストのスロット配置に適用しません。タイトルバーの下にコンテンツを置く場合の余白は React 側で調整してください。なお、Sidebar の詳細列や Split の列には、SwiftUI の `NavigationSplitView` 自身が確保するツールバー領域が引き続き反映されます。
 
 ## 状態同期
 
