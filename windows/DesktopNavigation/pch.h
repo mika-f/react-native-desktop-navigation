@@ -25,6 +25,8 @@
 #include <winrt/Windows.Data.Json.h>
 #include <NativeModules.h>
 #include <algorithm>
+#include <limits>
+#include <cmath>
 #include <cwchar>
 #include <map>
 #include <vector>

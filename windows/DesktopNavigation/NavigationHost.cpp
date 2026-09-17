@@ -65,16 +65,18 @@ struct Portal : implements<Portal, IInspectable> {
   FrameworkElement target{nullptr};
   event_token sizeToken{};
   float width = -1, height = -1, scale = 1;
+  // The footer is laid out at its natural height, which native then reserves for it.
+  bool fitHeight = false;
 
   void Constrain(float w, float h) {
     if (w == width && h == height) return;
     width = w; height = h;
-    if (link) link.ActualSize({w, h});
+    if (link && target) link.ActualSize({w, h});
     if (placement) placement.Size({w, h});
     if (!state) return;
     winrt::Microsoft::ReactNative::LayoutConstraints constraints;
-    constraints.MinimumSize = {w, h};
-    constraints.MaximumSize = {w, h};
+    constraints.MinimumSize = {w, fitHeight ? 0 : h};
+    constraints.MaximumSize = {w, fitHeight ? std::numeric_limits<float>::infinity() : h};
     constraints.LayoutDirection = winrt::Microsoft::ReactNative::LayoutDirection::Undefined;
     state.UpdateState(make<PortalState>(constraints, scale));
   }
@@ -107,6 +109,13 @@ struct Portal : implements<Portal, IInspectable> {
     sizeToken = element.SizeChanged([weak = get_weak()](auto const &, SizeChangedEventArgs const &args) {
       if (auto self = weak.get()) self->Constrain(args.NewSize().Width, args.NewSize().Height);
     });
+  }
+  // Natural height of the portal's content as laid out by Fabric, or 0 before its first layout.
+  float ContentHeight() const {
+    auto strong = view.get();
+    if (!strong) return 0;
+    auto children = strong.ContentRoot().Children();
+    return children.Size() ? children.GetAt(0).LayoutMetrics().Frame.Height : 0;
   }
   void Detach() {
     if (!target) return;
@@ -271,6 +280,15 @@ struct Host : implements<Host, IInspectable> {
     if (placement) placement.Scale({metrics.PointScaleFactor, metrics.PointScaleFactor, 1});
   }
   std::wstring hostId;
+  static FrameworkElement FindNamed(DependencyObject const &node, std::wstring_view name) {
+    auto count = VisualTreeHelper::GetChildrenCount(node);
+    for (int32_t index = 0; index < count; ++index) {
+      auto child = VisualTreeHelper::GetChild(node, index);
+      if (auto element = child.try_as<FrameworkElement>(); element && element.Name() == name) return element;
+      if (auto found = FindNamed(child, name)) return found;
+    }
+    return nullptr;
+  }
   // Hosts each registered portal in the XAML element reserved for its slot, and hides the others.
   void SyncPortals() {
     if (hostId.empty() || !island) return;
@@ -286,6 +304,26 @@ struct Host : implements<Host, IInspectable> {
       if (slot.rfind(L"content:", 0) == 0) {
         auto found = slots.find(hstring(slot.substr(8)));
         if (found != slots.end() && found->second.IsLoaded()) element = found->second;
+      } else if (slot.rfind(L"icon:", 0) == 0) {
+        auto key = hstring(slot.substr(5));
+        auto item = menu.find(key);
+        auto descriptor = iconConfigurations.find(key);
+        if (item != menu.end() && descriptor != iconConfigurations.end() && !descriptor->second.empty() &&
+            JsonObject::Parse(descriptor->second).GetNamedString(L"type", L"") == L"react" && item->second.IsLoaded()) {
+          // The template's IconBox is a Viewbox that scales its child (the placeholder icon) down to the icon
+          // size; hosting in the Viewbox itself keeps the React icon unscaled.
+          if (auto box = FindNamed(item->second, L"IconBox"); box && box.ActualWidth() > 0) element = box;
+        }
+      } else if (slot == L"footer" && footer && navigation) {
+        portal->fitHeight = true;
+        // Reserve the footer's natural height below the menu items.
+        auto natural = portal->ContentHeight();
+        if (natural > 0 && std::abs(footer.Height() - natural) >= 0.5) {
+          footer.Height(natural);
+          footer.Visibility(Visibility::Visible);
+        }
+        if (footer.IsLoaded() && footer.Visibility() == Visibility::Visible && footer.ActualWidth() > 0) element = footer;
+        else portal->Constrain(static_cast<float>(navigation.OpenPaneLength()), 0);
       }
       if (element) portal->Attach(island.ContentIsland(), element, scale);
       else portal->Detach();

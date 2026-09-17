@@ -339,7 +339,37 @@ export function NativeSurface({
           );
         })}
       </View>
-      {footer != null && footer !== false && (
+      {portals && footer != null && footer !== false && (
+        <NativePortal hostId={hostId} slot="footer">
+          {/* Laid out natively at the pane width and its natural height, which
+              native then reserves below the menu items. */}
+          <View
+            collapsable={false}
+            pointerEvents="box-none"
+            onLayout={(event) =>
+              onFooterHeight?.(event.nativeEvent.layout.height)
+            }
+          >
+            {footer}
+          </View>
+        </NativePortal>
+      )}
+      {portals &&
+        icons.map((icon) => (
+          <NativePortal key={icon.key} hostId={hostId} slot={`icon:${icon.key}`}>
+            <View
+              collapsable={false}
+              pointerEvents="none"
+              accessible={false}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={styles.portalIcon}
+            >
+              {icon.content}
+            </View>
+          </NativePortal>
+        ))}
+      {!portals && footer != null && footer !== false && (
         // Measured at its natural height so native can reserve exactly that
         // much space; kept invisible until native reports the reserved frame.
         <View
@@ -378,7 +408,7 @@ export function NativeSurface({
         importantForAccessibility="no-hide-descendants"
         style={StyleSheet.absoluteFillObject}
       >
-        {icons.map((icon) => {
+        {!portals && icons.map((icon) => {
           // Keep SVGs mounted across selection-only revisions, but never reuse
           // positions after a layout configuration change (even if reverted).
           const geometry =
@@ -432,5 +462,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   slot: { position: 'absolute', overflow: 'hidden' },
   portalContent: { flex: 1, overflow: 'hidden' },
+  portalIcon: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   footer: { position: 'absolute' },
 });
