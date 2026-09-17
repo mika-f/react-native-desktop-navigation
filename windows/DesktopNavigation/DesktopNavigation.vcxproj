@@ -16,6 +16,13 @@
   <PropertyGroup Label="ReactNativeWindowsProps">
     <ReactNativeWindowsDir Condition="'$(ReactNativeWindowsDir)' == ''">$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), 'node_modules\react-native-windows\package.json'))\node_modules\react-native-windows\</ReactNativeWindowsDir>
     <RunAutolinkCheck>false</RunAutolinkCheck>
+    <!--
+      This project registers its Fabric component by hand in NavigationHost.cpp and consumes no
+      codegen output, so skip codegen-windows. Leaving it on runs the CLI from this package's own
+      directory, which fails with "unknown command 'codegen-windows'" once installed into a
+      consuming app, where react-native-windows is not among this package's dependencies.
+    -->
+    <RunCodegenWindows>false</RunCodegenWindows>
   </PropertyGroup>
   <Import Project="$(ReactNativeWindowsDir)\PropertySheets\External\Microsoft.ReactNative.WindowsSdk.Default.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
