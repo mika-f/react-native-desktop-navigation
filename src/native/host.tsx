@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Platform,
   UIManager,
+  useColorScheme,
   View,
   StyleSheet,
   type StyleProp,
@@ -215,7 +216,13 @@ export function NativeSurface({
   // find their host by this id.
   const portals = Platform.OS === 'windows';
   const hostId = React.useId();
-  if (portals) configuration = { ...configuration, hostId } as NativeConfiguration;
+  const colorScheme = useColorScheme();
+  if (portals)
+    configuration = {
+      ...configuration,
+      hostId,
+      colorScheme: colorScheme ?? undefined,
+    } as NativeConfiguration;
   const [acknowledgement, acknowledge] = React.useReducer((n) => n + 1, 0);
   const serialized = JSON.stringify(configuration);
   // Selection and acknowledgements do not invalidate sidebar icon positions.
@@ -308,7 +315,10 @@ export function NativeSurface({
                   importantForAccessibility={
                     visible ? 'auto' : 'no-hide-descendants'
                   }
-                  style={styles.portalContent}
+                  style={[
+                    styles.portalContent,
+                    frame && { width: frame.width, height: frame.height },
+                  ]}
                 >
                   {content}
                 </View>
@@ -341,21 +351,21 @@ export function NativeSurface({
       </View>
       {portals && footer != null && footer !== false && (
         <NativePortal hostId={hostId} slot="footer">
-          {/* Laid out natively at the pane width and its natural height, which
-              native then reserves below the menu items. */}
+          {/* Laid out at the pane width and its natural height, which native
+              reads and reserves below the menu items. */}
           <View
             collapsable={false}
             pointerEvents="box-none"
-            onLayout={(event) =>
-              onFooterHeight?.(event.nativeEvent.layout.height)
-            }
+            style={{ width: footerFrame?.width ?? configuration.paneWidth ?? 240 }}
           >
             {footer}
           </View>
         </NativePortal>
       )}
       {portals &&
-        icons.map((icon) => (
+        icons.map((icon) => {
+          const frame = layout?.iconFrames?.[icon.key]?.frame;
+          return (
           <NativePortal key={icon.key} hostId={hostId} slot={`icon:${icon.key}`}>
             <View
               collapsable={false}
@@ -363,12 +373,16 @@ export function NativeSurface({
               accessible={false}
               accessibilityElementsHidden
               importantForAccessibility="no-hide-descendants"
-              style={styles.portalIcon}
+              style={[
+                styles.portalIcon,
+                frame && { width: frame.width, height: frame.height },
+              ]}
             >
               {icon.content}
             </View>
           </NativePortal>
-        ))}
+          );
+        })}
       {!portals && footer != null && footer !== false && (
         // Measured at its natural height so native can reserve exactly that
         // much space; kept invisible until native reports the reserved frame.
@@ -461,7 +475,7 @@ export function NativeSurface({
 const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   slot: { position: 'absolute', overflow: 'hidden' },
-  portalContent: { flex: 1, overflow: 'hidden' },
-  portalIcon: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  portalContent: { overflow: 'hidden' },
+  portalIcon: { alignItems: 'center', justifyContent: 'center' },
   footer: { position: 'absolute' },
 });

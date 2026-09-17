@@ -43,42 +43,27 @@ struct PortalProps : implements<PortalProps, IComponentProps> {
   ViewProps viewProps;
 };
 
-struct PortalState : implements<PortalState, IPortalStateData> {
-  PortalState(winrt::Microsoft::ReactNative::LayoutConstraints constraints, float scale) : constraints(constraints), scale(scale) {}
-  winrt::Microsoft::ReactNative::LayoutConstraints LayoutConstraints() const noexcept { return constraints; }
-  float PointScaleFactor() const noexcept { return scale; }
-  winrt::Microsoft::ReactNative::LayoutConstraints constraints;
-  float scale;
-};
-
 // A XAML island composites above its Fabric siblings, so React content cannot be laid over it. Instead each
 // piece of React content (a scene, a sidebar icon, the footer) is rendered by a DesktopNavigationPortal into
 // its own React Native island, hosted inside the XAML element that reserves space for it. The content stays
 // in the same React tree (Context, state) while appearing, and receiving input, inside the native control.
 struct Portal : implements<Portal, IInspectable> {
   winrt::weak_ref<PortalComponentView> view;
-  IComponentState state{nullptr};
   hstring hostId, slot;
   ReactNativeIsland reactIsland{nullptr};
   Microsoft::UI::Composition::SpriteVisual placement{nullptr};
   Microsoft::UI::Content::ChildSiteLink link{nullptr};
   FrameworkElement target{nullptr};
   event_token sizeToken{};
-  float width = -1, height = -1, scale = 1;
-  // The footer is laid out at its natural height, which native then reserves for it.
-  bool fitHeight = false;
+  float width = -1, height = -1;
 
-  void Constrain(float w, float h) {
+  // Sizes the hosted island. The React content itself is sized from the frames native reports to JS: portal
+  // state constraints are not re-applied by Fabric once the portal has been laid out.
+  void Resize(float w, float h) {
     if (w == width && h == height) return;
     width = w; height = h;
     if (link && target) link.ActualSize({w, h});
     if (placement) placement.Size({w, h});
-    if (!state) return;
-    winrt::Microsoft::ReactNative::LayoutConstraints constraints;
-    constraints.MinimumSize = {w, fitHeight ? 0 : h};
-    constraints.MaximumSize = {w, fitHeight ? std::numeric_limits<float>::infinity() : h};
-    constraints.LayoutDirection = winrt::Microsoft::ReactNative::LayoutDirection::Undefined;
-    state.UpdateState(make<PortalState>(constraints, scale));
   }
   static Microsoft::UI::Composition::ContainerVisual HostVisual(FrameworkElement const &element) {
     if (auto existing = Microsoft::UI::Xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(element))
@@ -88,12 +73,11 @@ struct Portal : implements<Portal, IInspectable> {
     Microsoft::UI::Xaml::Hosting::ElementCompositionPreview::SetElementChildVisual(element, container);
     return container;
   }
-  void Attach(Microsoft::UI::Content::ContentIsland const &xamlIsland, FrameworkElement const &element, float rasterizationScale) {
+  void Attach(Microsoft::UI::Content::ContentIsland const &xamlIsland, FrameworkElement const &element) {
     auto strong = view.get();
     if (!strong || element == target) return;
     Detach();
     target = element;
-    scale = rasterizationScale;
     if (!reactIsland) reactIsland = ReactNativeIsland::CreatePortal(strong);
     auto host = HostVisual(element);
     if (!placement) placement = host.Compositor().CreateSpriteVisual();
@@ -105,9 +89,9 @@ struct Portal : implements<Portal, IInspectable> {
     }
     placement.IsVisible(true);
     width = height = -1;
-    Constrain(static_cast<float>(element.ActualWidth()), static_cast<float>(element.ActualHeight()));
+    Resize(static_cast<float>(element.ActualWidth()), static_cast<float>(element.ActualHeight()));
     sizeToken = element.SizeChanged([weak = get_weak()](auto const &, SizeChangedEventArgs const &args) {
-      if (auto self = weak.get()) self->Constrain(args.NewSize().Width, args.NewSize().Height);
+      if (auto self = weak.get()) self->Resize(args.NewSize().Width, args.NewSize().Height);
     });
   }
   // Natural height of the portal's content as laid out by Fabric, or 0 before its first layout.
@@ -161,6 +145,16 @@ static SolidColorBrush Brush(hstring const &value, Windows::UI::Color fallback) 
     } catch (...) {}
   }
   return SolidColorBrush(fallback);
+}
+// Colors omitted from the appearance fall back to the WinUI theme rather than to fixed colors.
+static SolidColorBrush OptionalBrush(JsonObject const &appearance, wchar_t const *key) {
+  auto value = appearance.GetNamedString(key, L"");
+  return value.empty() ? nullptr : Brush(value, {255, 0, 0, 0});
+}
+static void SetResource(ResourceDictionary const &resources, wchar_t const *key, SolidColorBrush const &brush) {
+  auto boxed = box_value(key);
+  if (brush) resources.Insert(boxed, brush);
+  else if (resources.HasKey(boxed)) resources.Remove(boxed);
 }
 static IconElement ItemIcon(JsonObject const &item) {
   if (!item.HasKey(L"icon")) return nullptr;
@@ -294,7 +288,6 @@ struct Host : implements<Host, IInspectable> {
     if (hostId.empty() || !island) return;
     auto entry = Portals().find(hostId);
     if (entry == Portals().end()) return;
-    auto scale = island.ContentIsland().RasterizationScale();
     auto &list = entry->second;
     list.erase(std::remove_if(list.begin(), list.end(), [](auto const &weak) { return !weak.get(); }), list.end());
     for (auto const &weak : list) {
@@ -315,17 +308,17 @@ struct Host : implements<Host, IInspectable> {
           if (auto box = FindNamed(item->second, L"IconBox"); box && box.ActualWidth() > 0) element = box;
         }
       } else if (slot == L"footer" && footer && navigation) {
-        portal->fitHeight = true;
-        // Reserve the footer's natural height below the menu items.
+        // Reserve the footer's natural height (laid out by React at the pane width) below the menu items.
         auto natural = portal->ContentHeight();
         if (natural > 0 && std::abs(footer.Height() - natural) >= 0.5) {
           footer.Height(natural);
           footer.Visibility(Visibility::Visible);
         }
-        if (footer.IsLoaded() && footer.Visibility() == Visibility::Visible && footer.ActualWidth() > 0) element = footer;
-        else portal->Constrain(static_cast<float>(navigation.OpenPaneLength()), 0);
+        // Like the macOS sidebar, the footer is only shown while the pane is open.
+        if (navigation.IsPaneOpen() && footer.IsLoaded() && footer.Visibility() == Visibility::Visible && footer.ActualWidth() > 0)
+          element = footer;
       }
-      if (element) portal->Attach(island.ContentIsland(), element, scale);
+      if (element) portal->Attach(island.ContentIsland(), element);
       else portal->Detach();
     }
   }
@@ -554,16 +547,20 @@ struct Host : implements<Host, IInspectable> {
       else BuildStack();
     }
     auto appearance = config.GetNamedObject(L"appearance", JsonObject());
-    root.Background(Brush(appearance.GetNamedString(L"backgroundColor", L""), {255, 255, 255, 255}));
-    auto foreground = Brush(appearance.GetNamedString(L"foregroundColor", L""), {255, 32, 33, 36});
+    // Follow the React Native color scheme so that WinUI's own colors match the app.
+    auto scheme = config.GetNamedString(L"colorScheme", L"");
+    root.RequestedTheme(scheme == L"dark" ? ElementTheme::Dark : scheme == L"light" ? ElementTheme::Light : ElementTheme::Default);
+    root.Background(OptionalBrush(appearance, L"backgroundColor"));
+    auto foreground = OptionalBrush(appearance, L"foregroundColor");
+    auto accent = OptionalBrush(appearance, L"accentColor");
     auto active = config.GetNamedString(L"activeKey");
     if (content) { slots.clear(); slots.emplace(active, content); }
     if (mode == L"stack") {
       header.Visibility(config.GetNamedBoolean(L"headerShown", true) ? Visibility::Visible : Visibility::Collapsed);
       back.Visibility(config.GetNamedBoolean(L"canGoBack", false) ? Visibility::Visible : Visibility::Collapsed);
       back.Content(box_value(config.GetNamedString(L"backTitle", L"Back")));
-      back.Foreground(Brush(appearance.GetNamedString(L"accentColor", L""), {255, 0, 103, 192}));
-      title.Foreground(foreground);
+      if (accent) back.Foreground(accent); else back.ClearValue(Control::ForegroundProperty());
+      if (foreground) title.Foreground(foreground); else title.ClearValue(TextBlock::ForegroundProperty());
       for (auto const &entry : items) { auto item = entry.GetObject(); if (item.GetNamedString(L"key") == active) title.Text(item.GetNamedString(L"title")); }
     }
     if (navigation) {
@@ -572,11 +569,11 @@ struct Host : implements<Host, IInspectable> {
       auto footerHeight = config.GetNamedNumber(L"footerHeight", 0);
       footer.Height(footerHeight > 0 ? footerHeight : 0);
       footer.Visibility(footerHeight > 0 ? Visibility::Visible : Visibility::Collapsed);
-      navigation.Foreground(foreground);
-      auto resource = Brush(appearance.GetNamedString(L"sidebarBackgroundColor", L""), {255, 245, 245, 247});
-      navigation.Resources().Insert(box_value(L"NavigationViewExpandedPaneBackground"), resource);
-      navigation.Resources().Insert(box_value(L"NavigationViewDefaultPaneBackground"), resource);
-      navigation.Resources().Insert(box_value(L"NavigationViewSelectionIndicatorForeground"), Brush(appearance.GetNamedString(L"accentColor", L""), {255, 0, 103, 192}));
+      if (foreground) navigation.Foreground(foreground); else navigation.ClearValue(Control::ForegroundProperty());
+      auto pane = OptionalBrush(appearance, L"sidebarBackgroundColor");
+      SetResource(navigation.Resources(), L"NavigationViewExpandedPaneBackground", pane);
+      SetResource(navigation.Resources(), L"NavigationViewDefaultPaneBackground", pane);
+      SetResource(navigation.Resources(), L"NavigationViewSelectionIndicatorForeground", accent);
       for (auto const &entry : items) {
         auto item = entry.GetObject(); auto it = menu.find(item.GetNamedString(L"key"));
         if (it == menu.end()) continue;
@@ -650,8 +647,6 @@ void RegisterDesktopNavigation(winrt::Microsoft::ReactNative::IReactPackageBuild
       auto portal = make_self<Portal>();
       portal->view = view;
       view.UserData(*portal);
-      // Create the React Native island up front: nested navigators mounted inside this portal need it as the
-      // parent of their own XAML island before the portal is attached to a XAML element.
       view.Destroying([](IInspectable const &sender, IInspectable const &) {
         auto portal = sender.as<PortalComponentView>().UserData().as<Portal>();
         RegisterPortal(*portal, L"", L"");
@@ -661,15 +656,6 @@ void RegisterDesktopNavigation(winrt::Microsoft::ReactNative::IReactPackageBuild
     builder.SetUpdatePropsHandler([](winrt::Microsoft::ReactNative::ComponentView const &view, IComponentProps const &props, IComponentProps const &) {
       auto next = props.as<PortalProps>();
       RegisterPortal(*view.UserData().as<Portal>(), next->hostId, next->slot);
-    });
-    builder.SetUpdateStateHandler([](winrt::Microsoft::ReactNative::ComponentView const &view, IComponentState const &state) {
-      auto portal = view.UserData().as<Portal>();
-      portal->state = state;
-      if (portal->width >= 0) {
-        auto w = portal->width, h = portal->height;
-        portal->width = -1;
-        portal->Constrain(w, h);
-      }
     });
   });
   packageBuilder.as<IReactPackageBuilderFabric>().AddViewComponent(L"DesktopNavigationHost", [](IReactViewComponentBuilder const &builder) {
