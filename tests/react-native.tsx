@@ -66,6 +66,7 @@ export const PanResponder = {
   }),
 };
 export const UIManager = { hasViewManagerConfig: (_name: string) => true };
+export const useColorScheme = () => 'light' as const;
 export const codegenNativeComponent = <P,>(name: string) =>
   host(name) as React.ComponentType<P>;
 

@@ -356,7 +356,9 @@ export function NativeSurface({
           <View
             collapsable={false}
             pointerEvents="box-none"
-            style={{ width: footerFrame?.width ?? configuration.paneWidth ?? 240 }}
+            style={{
+              width: footerFrame?.width ?? configuration.paneWidth ?? 240,
+            }}
           >
             {footer}
           </View>
@@ -366,21 +368,25 @@ export function NativeSurface({
         icons.map((icon) => {
           const frame = layout?.iconFrames?.[icon.key]?.frame;
           return (
-          <NativePortal key={icon.key} hostId={hostId} slot={`icon:${icon.key}`}>
-            <View
-              collapsable={false}
-              pointerEvents="none"
-              accessible={false}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              style={[
-                styles.portalIcon,
-                frame && { width: frame.width, height: frame.height },
-              ]}
+            <NativePortal
+              key={icon.key}
+              hostId={hostId}
+              slot={`icon:${icon.key}`}
             >
-              {icon.content}
-            </View>
-          </NativePortal>
+              <View
+                collapsable={false}
+                pointerEvents="none"
+                accessible={false}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={[
+                  styles.portalIcon,
+                  frame && { width: frame.width, height: frame.height },
+                ]}
+              >
+                {icon.content}
+              </View>
+            </NativePortal>
           );
         })}
       {!portals && footer != null && footer !== false && (
@@ -422,52 +428,53 @@ export function NativeSurface({
         importantForAccessibility="no-hide-descendants"
         style={StyleSheet.absoluteFillObject}
       >
-        {!portals && icons.map((icon) => {
-          // Keep SVGs mounted across selection-only revisions, but never reuse
-          // positions after a layout configuration change (even if reverted).
-          const geometry =
-            measurement?.iconLayoutRevision === iconLayoutRevision
-              ? layout?.iconFrames?.[icon.key]
-              : undefined;
-          if (
-            !geometry ||
-            geometry.clip.width <= 0 ||
-            geometry.clip.height <= 0
-          )
-            return null;
-          const { frame, clip } = geometry;
-          return (
-            <View
-              key={icon.key}
-              collapsable={false}
-              pointerEvents="none"
-              style={[
-                styles.slot,
-                {
-                  left: clip.x,
-                  top: clip.y,
-                  width: clip.width,
-                  height: clip.height,
-                },
-              ]}
-            >
+        {!portals &&
+          icons.map((icon) => {
+            // Keep SVGs mounted across selection-only revisions, but never reuse
+            // positions after a layout configuration change (even if reverted).
+            const geometry =
+              measurement?.iconLayoutRevision === iconLayoutRevision
+                ? layout?.iconFrames?.[icon.key]
+                : undefined;
+            if (
+              !geometry ||
+              geometry.clip.width <= 0 ||
+              geometry.clip.height <= 0
+            )
+              return null;
+            const { frame, clip } = geometry;
+            return (
               <View
+                key={icon.key}
+                collapsable={false}
                 pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: frame.x - clip.x,
-                  top: frame.y - clip.y,
-                  width: frame.width,
-                  height: frame.height,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                style={[
+                  styles.slot,
+                  {
+                    left: clip.x,
+                    top: clip.y,
+                    width: clip.width,
+                    height: clip.height,
+                  },
+                ]}
               >
-                {icon.content}
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    left: frame.x - clip.x,
+                    top: frame.y - clip.y,
+                    width: frame.width,
+                    height: frame.height,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {icon.content}
+                </View>
               </View>
-            </View>
-          );
-        })}
+            );
+          })}
       </View>
     </View>
   );

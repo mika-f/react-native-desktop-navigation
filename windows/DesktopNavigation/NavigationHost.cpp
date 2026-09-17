@@ -56,6 +56,8 @@ struct Portal : implements<Portal, IInspectable> {
   FrameworkElement target{nullptr};
   event_token sizeToken{};
   float width = -1, height = -1;
+  // ReactNativeIsland::CreatePortal requires a mounted portal view.
+  bool mounted = false;
 
   // Sizes the hosted island. The React content itself is sized from the frames native reports to JS: portal
   // state constraints are not re-applied by Fabric once the portal has been laid out.
@@ -75,7 +77,7 @@ struct Portal : implements<Portal, IInspectable> {
   }
   void Attach(Microsoft::UI::Content::ContentIsland const &xamlIsland, FrameworkElement const &element) {
     auto strong = view.get();
-    if (!strong || element == target) return;
+    if (!strong || !mounted || element == target) return;
     Detach();
     target = element;
     if (!reactIsland) reactIsland = ReactNativeIsland::CreatePortal(strong);
@@ -616,6 +618,12 @@ struct Host : implements<Host, IInspectable> {
     root.InvalidateArrange();
   }
 };
+static void SyncPortalHost(Portal const &portal) {
+  if (portal.hostId.empty()) return;
+  auto found = Hosts().find(std::wstring(portal.hostId));
+  if (found != Hosts().end())
+    if (auto host = found->second.get()) host->SyncPortals();
+}
 static void RegisterPortal(Portal &portal, hstring const &hostId, hstring const &slot) {
   if (portal.hostId == hostId && portal.slot == slot) return;
   if (!portal.hostId.empty()) {
@@ -630,9 +638,7 @@ static void RegisterPortal(Portal &portal, hstring const &hostId, hstring const 
   portal.slot = slot;
   if (hostId.empty()) return;
   Portals()[std::wstring(hostId)].push_back(portal.get_weak());
-  auto found = Hosts().find(std::wstring(hostId));
-  if (found != Hosts().end())
-    if (auto host = found->second.get()) host->SyncPortals();
+  SyncPortalHost(portal);
 }
 }
 
@@ -647,6 +653,16 @@ void RegisterDesktopNavigation(winrt::Microsoft::ReactNative::IReactPackageBuild
       auto portal = make_self<Portal>();
       portal->view = view;
       view.UserData(*portal);
+      view.Mounted([](IInspectable const &, winrt::Microsoft::ReactNative::ComponentView const &sender) {
+        auto portal = sender.UserData().as<Portal>();
+        portal->mounted = true;
+        SyncPortalHost(*portal);
+      });
+      view.Unmounted([](IInspectable const &, winrt::Microsoft::ReactNative::ComponentView const &sender) {
+        auto portal = sender.UserData().as<Portal>();
+        portal->mounted = false;
+        portal->Detach();
+      });
       view.Destroying([](IInspectable const &sender, IInspectable const &) {
         auto portal = sender.as<PortalComponentView>().UserData().as<Portal>();
         RegisterPortal(*portal, L"", L"");

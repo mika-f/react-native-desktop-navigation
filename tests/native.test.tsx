@@ -2,7 +2,7 @@ import React from 'react';
 import { House } from 'lucide-react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { Text, View, UIManager, TextInput } from 'react-native';
+import { Text, View, UIManager, TextInput, StyleSheet } from 'react-native';
 import { Platform, nativeFocus } from './react-native';
 import {
   NavigationContainer,
@@ -565,7 +565,7 @@ it('rejects invalid native icon descriptors before passing them to native contro
   ).toThrow('URI');
 });
 
-it.each(['macos', 'windows'])(
+it.each(['macos'])(
   'renders Lucide JSX in native sidebar slots on %s, preserving clipping, context and selection',
   (os) => {
     Platform.OS = os;
@@ -860,6 +860,90 @@ it('supports direct JSX and rejects invalid React slot dimensions and icon geome
       ),
     ).toBeNull();
   }
+});
+
+it('hosts Windows scenes, React icons and the footer in portals sized from native frames', () => {
+  Platform.OS = 'windows';
+  const Sidebar = createSidebarNavigator<{ A: undefined; B: undefined }>();
+  const IconColor = React.createContext('#000000');
+  function ContextIcon({ focused }: { focused: boolean }) {
+    const color = React.useContext(IconColor);
+    return <House size={16} color={focused ? color : '#888888'} />;
+  }
+  render(
+    <NavigationContainer>
+      <IconColor.Provider value="#c4a0ff">
+        <Sidebar.Navigator
+          screenOptions={{
+            icon: ({ focused }) => <ContextIcon focused={focused} />,
+          }}
+          renderSidebarFooter={() => <Text testID="footer">Settings</Text>}
+        >
+          <Sidebar.Screen
+            name="A"
+            component={() => <Text testID="scene-a">A</Text>}
+          />
+          <Sidebar.Screen
+            name="B"
+            component={() => <Text testID="scene-b">B</Text>}
+          />
+        </Sidebar.Navigator>
+      </IconColor.Provider>
+    </NavigationContainer>,
+  );
+  const first = configuration();
+  expect(first.hostId).toEqual(expect.any(String));
+  expect(first.colorScheme).toBe('light');
+  const [a, b] = first.items.map((i: { key: string }) => i.key);
+  const portals = () =>
+    renderer!.root.findAll(
+      (node) => String(node.type) === 'DesktopNavigationPortal',
+    );
+  const portal = (slot: string) =>
+    portals().find((n) => n.props.slot === slot)!;
+  // Every portal finds its host by id; native attaches it to the XAML element for its slot.
+  expect(portals().every((n) => n.props.hostId === first.hostId)).toBe(true);
+  expect(
+    portals()
+      .map((n) => n.props.slot)
+      .sort(),
+  ).toEqual(
+    [`content:${a}`, `content:${b}`, 'footer', `icon:${a}`, `icon:${b}`].sort(),
+  );
+  // Icons render before any geometry is reported and keep React context.
+  const svgs = () => renderer!.root.findAll((n) => String(n.type) === 'Svg');
+  expect(svgs()).toHaveLength(2);
+  expect(svgs()[0].props.stroke).toBe('#c4a0ff');
+  // Inactive scenes stay mounted inside their (unattached) portals.
+  expect(
+    portal(`content:${b}`).findByProps({ testID: 'scene-b' }),
+  ).toBeTruthy();
+  expect(portal('footer').findByProps({ testID: 'footer' })).toBeTruthy();
+  event({
+    type: 'layout',
+    frames: { [a]: { x: 240, y: 0, width: 500, height: 700 } },
+    iconFrames: {
+      [a]: {
+        frame: { x: 16, y: 56, width: 16, height: 16 },
+        clip: { x: 16, y: 56, width: 16, height: 16 },
+      },
+    },
+  });
+  const content = portal(`content:${a}`).children[0] as ReturnType<typeof host>;
+  expect(StyleSheet.flatten(content.props.style)).toMatchObject({
+    width: 500,
+    height: 700,
+  });
+  expect(content.props.pointerEvents).toBe('auto');
+  const icon = portal(`icon:${a}`).children[0] as ReturnType<typeof host>;
+  expect(StyleSheet.flatten(icon.props.style)).toMatchObject({
+    width: 16,
+    height: 16,
+  });
+  expect(icon.props.pointerEvents).toBe('none');
+  // Without a reported frame, a scene is not interactive.
+  const hidden = portal(`content:${b}`).children[0] as ReturnType<typeof host>;
+  expect(hidden.props.pointerEvents).toBe('none');
 });
 
 it('measures a React sidebar footer, reserves native space and places it at the reported frame', () => {
