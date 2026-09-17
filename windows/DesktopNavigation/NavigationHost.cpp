@@ -1,8 +1,10 @@
 #include "pch.h"
 
 // Fabric's XamlIsland API requires RNW 0.82+ and UseExperimentalWinUI3.
-// React scenes are siblings of this island in the Fabric composition tree.
-// The island reports its content slots; it never owns/reparents React children.
+// A XAML island always composites above its Fabric siblings, so React content (scenes, sidebar icons, the
+// footer) is not laid over it. Each piece is rendered through a DesktopNavigationPortal into its own React
+// Native island, which is hosted inside the XAML element reserved for it. The island reports its slot frames
+// so that JS can size that content.
 namespace winrt::DesktopNavigation {
 using namespace Microsoft::ReactNative;
 using namespace Microsoft::ReactNative::Composition;

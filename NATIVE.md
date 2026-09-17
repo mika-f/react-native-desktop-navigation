@@ -228,7 +228,7 @@ const Sidebar = createSidebarNavigator<{ Home: undefined }>();
 
 You can also pass an element directly, e.g. `icon: <House size={20} color="#c4a0ff" />`. `iconSize` is the square area reserved inside the native item for a React icon, defaulting to 24 points / DIPs; it can also be set via `screenOptions.iconSize`. The element is centered, and anything that overflows the area is clipped. Set the icon's own `size` and `color` in the JSX; native selected/disabled colors are not applied to the JSX automatically. The descriptor's own size is still `icon.size`, unchanged.
 
-React icons render inside the original Fabric tree and preserve React Context. Only the size of the empty icon area is sent to the native side — React elements and SVGs are never serialized to JSON or rasterized. They follow the position and clip region measured natively, and keep their SVG size while clipped during scrolling. Clicks and scrolling pass through to the native item, and icons are treated as decorative for accessibility. They are hidden while a macOS sidebar is collapsed, and follow the visible area of a compact Windows pane.
+React icons render inside the original Fabric tree and preserve React Context. Only the size of the empty icon area is sent to the native side — React elements and SVGs are never serialized to JSON or rasterized. On macOS they follow the position and clip region measured natively, and keep their SVG size while clipped during scrolling. On Windows they are hosted inside each `NavigationViewItem`'s icon area (see [Windows rendering](#windows-rendering)), whose size NavigationView fixes at 16 DIPs regardless of `iconSize`. Clicks and scrolling pass through to the native item, and icons are treated as decorative for accessibility. They are hidden while a macOS sidebar is collapsed, and stay visible in a compact Windows pane.
 
 SVG icon rendering has been verified on macOS 0.81 / Fabric with `react-native-svg` 15.15.5; use 15.15.5 or later. Existing hosts also need to rebuild this library's native code.
 
@@ -256,7 +256,7 @@ See [`examples/desktop/NativeLucide.tsx`](examples/desktop/NativeLucide.tsx) for
 </Sidebar.Navigator>
 ```
 
-The footer renders inside the original Fabric tree, so Context, state, interaction, and accessibility all work as usual. The natural height measured on the React side is sent to the native side, which reserves an empty area of that height below the sidebar column's List on macOS, or in `NavigationView.PaneFooter` on Windows. The footer is positioned to match the area and width measured natively, and stays hidden — with only its height measured — before that first measurement. Because height is driven by the footer's own content, avoid styles like `flex: 1` that depend on a parent's height.
+The footer renders inside the original Fabric tree, so Context, state, interaction, and accessibility all work as usual. Its natural height is reserved below the sidebar column's List on macOS, or in `NavigationView.PaneFooter` on Windows (where native reads the height from the footer's layout). On macOS the footer is positioned to match the area and width measured natively, and stays hidden — with only its height measured — before that first measurement. Because height is driven by the footer's own content, avoid styles like `flex: 1` that depend on a parent's height.
 
 `SidebarFooterProps`'s `collapsed` and `toggleSidebar` / `collapseSidebar` / `expandSidebar` are the same as in the JS version. Because the native Sidebar shows its own OS-drawn collapse button, `children` is always `null` here. The footer is hidden while the sidebar is closed (collapsed on macOS, or a closed pane on Windows). Returning `null` from `renderSidebarFooter` removes the area entirely.
 
@@ -291,10 +291,16 @@ npm run check:native-macos
 
 `check:native-macos` requires macOS / Xcode. It compiles the SwiftUI implementation and inspects layout notifications for Stack / Sidebar (including SF Symbols and local-image icons) / 3-column Split inside an AppKit window. The window is never shown on screen.
 
-This repository does not include an RN native host app. SVG icon rendering on macOS 0.81 / Fabric with `react-native-svg` 15.15.5 has been verified in a user's host app. **Windows C++ builds and on-device behavior are unverified.** As an experimental implementation at this stage, verify the following in your own host app:
+### Windows rendering
 
-- Native component registration, placement of nested containers, and window resizing.
+A XAML island always composites above its Fabric siblings, so React content cannot be laid over the native controls as on macOS. On Windows each scene, React sidebar icon, and the footer is rendered through a `DesktopNavigationPortal` into its own React Native island, which is hosted inside the XAML element that reserves space for it (the NavigationView content area, an item's icon area, `PaneFooter`, or a Split column). The content stays in the same React tree — Context and state are preserved — while it is drawn, and receives input, inside the native control. Inactive scenes stay mounted in portals that are not attached to any element.
+
+The island follows the React Native color scheme (`useColorScheme`), and appearance colors omitted or set to `null` use the WinUI theme. React Native Windows lays the island out in DIPs under a physical-pixel visual tree; the host scales it so it is not drawn shrunk on scaled displays.
+
+This repository does not include an RN native host app. SVG icon rendering on macOS 0.81 / Fabric with `react-native-svg` 15.15.5 has been verified in a user's host app. On Windows (RNW 0.84, WinAppSDK 2.0 experimental), the Sidebar nested in a Stack — with React icons, a footer, pane collapse, item selection, scrolling, and display scaling at 100% and 125% — has been verified in a user's host app. As an experimental implementation at this stage, verify the following in your own host app:
+
+- Split columns, Stack headers and back navigation on Windows.
 - Native item selection, back navigation, and pane open/close staying in sync with JS state / focus.
-- VoiceOver / Narrator, keyboard interaction, and input delivery / overlap between the Windows XAML Island and the React Scene.
+- VoiceOver / Narrator, and keyboard focus moving between the XAML island and React content hosted in portals.
 
 Official references used during implementation: [RN macOS native development](https://microsoft.github.io/react-native-macos/docs/guides/native-development), the [RNW XAML Island component sample](https://github.com/microsoft/react-native-windows/blob/0.82-stable/packages/sample-custom-component/windows/SampleCustomComponent/CalendarView.cpp), and [NavigationView](https://learn.microsoft.com/en-us/windows/apps/design/controls/navigationview).
