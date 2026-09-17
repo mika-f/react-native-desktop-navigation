@@ -10,6 +10,7 @@
 #include <winrt/Microsoft.ReactNative.Composition.Experimental.h>
 #include <winrt/Microsoft.UI.Content.h>
 #include <winrt/Microsoft.UI.Composition.h>
+#include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Windows.Foundation.Numerics.h>
 #include <winrt/Windows.UI.h>
 #include <winrt/Windows.System.h>

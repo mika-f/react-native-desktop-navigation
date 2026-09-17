@@ -9,6 +9,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import NativeHost from './specs/DesktopNavigationHostNativeComponent';
+import NativePortal from './windows/DesktopNavigationPortalNativeComponent';
 import type { ResolvedNativeIcon } from './icons';
 import { useNavigationTheme } from '../core/context';
 import { hiddenStyle } from '../core/hidden';
@@ -210,6 +211,11 @@ export function NativeSurface({
         'Native navigation appearance requires #RRGGBB or #RRGGBBAA colors.',
       );
   }
+  // Windows hosts React content inside the XAML island through portals, which
+  // find their host by this id.
+  const portals = Platform.OS === 'windows';
+  const hostId = React.useId();
+  if (portals) configuration = { ...configuration, hostId } as NativeConfiguration;
   const [acknowledgement, acknowledge] = React.useReducer((n) => n + 1, 0);
   const serialized = JSON.stringify(configuration);
   // Selection and acknowledgements do not invalidate sidebar icon positions.
@@ -284,6 +290,30 @@ export function NativeSurface({
           const frame = layout?.frames[slot.key];
           const visible =
             slot.visible && !!frame && frame.width > 0 && frame.height > 0;
+          const content =
+            typeof slot.content === 'function'
+              ? slot.content(visible)
+              : slot.content;
+          if (portals)
+            return (
+              <NativePortal
+                key={slot.key}
+                hostId={hostId}
+                slot={`content:${slot.key}`}
+              >
+                <View
+                  collapsable={false}
+                  pointerEvents={visible ? 'auto' : 'none'}
+                  accessibilityElementsHidden={!visible}
+                  importantForAccessibility={
+                    visible ? 'auto' : 'no-hide-descendants'
+                  }
+                  style={styles.portalContent}
+                >
+                  {content}
+                </View>
+              </NativePortal>
+            );
           return (
             <View
               key={slot.key}
@@ -304,9 +334,7 @@ export function NativeSurface({
                 !visible && hiddenStyle,
               ]}
             >
-              {typeof slot.content === 'function'
-                ? slot.content(visible)
-                : slot.content}
+              {content}
             </View>
           );
         })}
@@ -403,5 +431,6 @@ export function NativeSurface({
 const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   slot: { position: 'absolute', overflow: 'hidden' },
+  portalContent: { flex: 1, overflow: 'hidden' },
   footer: { position: 'absolute' },
 });

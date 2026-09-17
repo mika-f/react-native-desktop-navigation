@@ -25,6 +25,117 @@ struct HostProps : implements<HostProps, IComponentProps> {
   ViewProps viewProps;
 };
 
+REACT_STRUCT(PortalProps)
+struct PortalProps : implements<PortalProps, IComponentProps> {
+  PortalProps(ViewProps props, IComponentProps const &previous) : viewProps(props) {
+    if (previous) {
+      hostId = previous.as<PortalProps>()->hostId;
+      slot = previous.as<PortalProps>()->slot;
+    }
+  }
+  void SetProp(uint32_t hash, hstring name, IJSValueReader value) noexcept {
+    ReadProp(hash, name, value, *this);
+  }
+  REACT_FIELD(hostId)
+  hstring hostId;
+  REACT_FIELD(slot)
+  hstring slot;
+  ViewProps viewProps;
+};
+
+struct PortalState : implements<PortalState, IPortalStateData> {
+  PortalState(winrt::Microsoft::ReactNative::LayoutConstraints constraints, float scale) : constraints(constraints), scale(scale) {}
+  winrt::Microsoft::ReactNative::LayoutConstraints LayoutConstraints() const noexcept { return constraints; }
+  float PointScaleFactor() const noexcept { return scale; }
+  winrt::Microsoft::ReactNative::LayoutConstraints constraints;
+  float scale;
+};
+
+// A XAML island composites above its Fabric siblings, so React content cannot be laid over it. Instead each
+// piece of React content (a scene, a sidebar icon, the footer) is rendered by a DesktopNavigationPortal into
+// its own React Native island, hosted inside the XAML element that reserves space for it. The content stays
+// in the same React tree (Context, state) while appearing, and receiving input, inside the native control.
+struct Portal : implements<Portal, IInspectable> {
+  winrt::weak_ref<PortalComponentView> view;
+  IComponentState state{nullptr};
+  hstring hostId, slot;
+  ReactNativeIsland reactIsland{nullptr};
+  Microsoft::UI::Composition::SpriteVisual placement{nullptr};
+  Microsoft::UI::Content::ChildSiteLink link{nullptr};
+  FrameworkElement target{nullptr};
+  event_token sizeToken{};
+  float width = -1, height = -1, scale = 1;
+
+  void Constrain(float w, float h) {
+    if (w == width && h == height) return;
+    width = w; height = h;
+    if (link) link.ActualSize({w, h});
+    if (placement) placement.Size({w, h});
+    if (!state) return;
+    winrt::Microsoft::ReactNative::LayoutConstraints constraints;
+    constraints.MinimumSize = {w, h};
+    constraints.MaximumSize = {w, h};
+    constraints.LayoutDirection = winrt::Microsoft::ReactNative::LayoutDirection::Undefined;
+    state.UpdateState(make<PortalState>(constraints, scale));
+  }
+  static Microsoft::UI::Composition::ContainerVisual HostVisual(FrameworkElement const &element) {
+    if (auto existing = Microsoft::UI::Xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(element))
+      if (auto container = existing.try_as<Microsoft::UI::Composition::ContainerVisual>()) return container;
+    auto compositor = Microsoft::UI::Xaml::Hosting::ElementCompositionPreview::GetElementVisual(element).Compositor();
+    auto container = compositor.CreateContainerVisual();
+    Microsoft::UI::Xaml::Hosting::ElementCompositionPreview::SetElementChildVisual(element, container);
+    return container;
+  }
+  void Attach(Microsoft::UI::Content::ContentIsland const &xamlIsland, FrameworkElement const &element, float rasterizationScale) {
+    auto strong = view.get();
+    if (!strong || element == target) return;
+    Detach();
+    target = element;
+    scale = rasterizationScale;
+    if (!reactIsland) reactIsland = ReactNativeIsland::CreatePortal(strong);
+    auto host = HostVisual(element);
+    if (!placement) placement = host.Compositor().CreateSpriteVisual();
+    host.Children().InsertAtTop(placement);
+    if (!link) {
+      link = Microsoft::UI::Content::ChildSiteLink::Create(xamlIsland, placement);
+      link.ActualSize({static_cast<float>(element.ActualWidth()), static_cast<float>(element.ActualHeight())});
+      link.Connect(reactIsland.Island());
+    }
+    placement.IsVisible(true);
+    width = height = -1;
+    Constrain(static_cast<float>(element.ActualWidth()), static_cast<float>(element.ActualHeight()));
+    sizeToken = element.SizeChanged([weak = get_weak()](auto const &, SizeChangedEventArgs const &args) {
+      if (auto self = weak.get()) self->Constrain(args.NewSize().Width, args.NewSize().Height);
+    });
+  }
+  void Detach() {
+    if (!target) return;
+    target.SizeChanged(sizeToken);
+    if (placement) {
+      placement.IsVisible(false);
+      if (auto parent = placement.Parent()) parent.Children().Remove(placement);
+    }
+    // An unattached portal must not keep a hit-testable area.
+    if (link) link.ActualSize({0, 0});
+    target = nullptr;
+  }
+  void Close() {
+    Detach();
+    if (link) { link.Close(); link = nullptr; }
+    reactIsland = nullptr;
+  }
+};
+
+struct Host;
+static std::map<std::wstring, winrt::weak_ref<Host>> &Hosts() {
+  static std::map<std::wstring, winrt::weak_ref<Host>> value;
+  return value;
+}
+static std::map<std::wstring, std::vector<winrt::weak_ref<Portal>>> &Portals() {
+  static std::map<std::wstring, std::vector<winrt::weak_ref<Portal>>> value;
+  return value;
+}
+
 static void String(JsonObject const &object, wchar_t const *key, hstring const &value) {
   object.SetNamedValue(key, JsonValue::CreateStringValue(value));
 }
@@ -133,14 +244,55 @@ struct Host : implements<Host, IInspectable> {
     root = Grid();
     island = XamlIsland();
     island.Content(root);
-    view.Connect(island.ContentIsland());
+    // Connecting creates a ChildSiteLink on the React Native island this view is mounted in, which fails while
+    // that island is not connected yet (a navigator nested in a portal is mounted before the portal attaches).
+    view.Mounted([weak = get_weak()](auto const &, winrt::Microsoft::ReactNative::ComponentView const &sender) {
+      if (auto self = weak.get()) self->ConnectWhenReady(sender.as<ContentIslandComponentView>());
+    });
     layoutToken = root.LayoutUpdated([this](auto const &, auto const &) { ReportLayout(); });
     view.LayoutMetricsChanged([this](auto const &, LayoutMetricsChangedArgs const &args) { UpdateScale(args.NewLayoutMetrics()); });
+  }
+  Microsoft::UI::Content::ContentIsland pendingParent{nullptr};
+  event_token pendingToken{};
+  void ConnectWhenReady(ContentIslandComponentView const &view) {
+    if (island.ContentIsland().IsConnected()) return;
+    auto parent = view.Root().ReactNativeIsland().Island();
+    if (parent.IsConnected()) { view.Connect(island.ContentIsland()); return; }
+    if (pendingParent) return;
+    pendingParent = parent;
+    pendingToken = parent.Connected([weak = get_weak(), weakView = winrt::make_weak(view)](auto const &, auto const &) {
+      auto self = weak.get(); auto strongView = weakView.get();
+      if (!self) return;
+      self->pendingParent.Connected(self->pendingToken); self->pendingParent = nullptr;
+      if (strongView && !self->island.ContentIsland().IsConnected()) strongView.Connect(self->island.ContentIsland());
+    });
   }
   void UpdateScale(LayoutMetrics const &metrics) {
     if (placement) placement.Scale({metrics.PointScaleFactor, metrics.PointScaleFactor, 1});
   }
+  std::wstring hostId;
+  // Hosts each registered portal in the XAML element reserved for its slot, and hides the others.
+  void SyncPortals() {
+    if (hostId.empty() || !island) return;
+    auto entry = Portals().find(hostId);
+    if (entry == Portals().end()) return;
+    auto scale = island.ContentIsland().RasterizationScale();
+    auto &list = entry->second;
+    list.erase(std::remove_if(list.begin(), list.end(), [](auto const &weak) { return !weak.get(); }), list.end());
+    for (auto const &weak : list) {
+      auto portal = weak.get();
+      FrameworkElement element{nullptr};
+      std::wstring slot(portal->slot);
+      if (slot.rfind(L"content:", 0) == 0) {
+        auto found = slots.find(hstring(slot.substr(8)));
+        if (found != slots.end() && found->second.IsLoaded()) element = found->second;
+      }
+      if (element) portal->Attach(island.ContentIsland(), element, scale);
+      else portal->Detach();
+    }
+  }
   void Close() {
+    if (!hostId.empty()) Hosts().erase(hostId);
     updating = true;
     ClearScrollObservers();
     root.LayoutUpdated(layoutToken);
@@ -177,6 +329,7 @@ struct Host : implements<Host, IInspectable> {
   }
   void ReportLayout() {
     if (updating || !emitter || !root || root.ActualWidth() <= 0) return;
+    SyncPortals();
     JsonObject frames;
     for (auto const &[key, slot] : slots) {
       auto offset = slot.TransformToVisual(root).TransformPoint({0, 0});
@@ -415,12 +568,37 @@ struct Host : implements<Host, IInspectable> {
       for (size_t i = 0; i + 1 < detailColumns.size(); ++i)
         detailColumns[i].Width({columns.GetObjectAt(static_cast<uint32_t>(i + 1)).GetNamedNumber(L"width") + 6, GridUnitType::Pixel});
     }
+    auto nextHostId = std::wstring(config.GetNamedString(L"hostId", L""));
+    if (nextHostId != hostId) {
+      if (!hostId.empty()) Hosts().erase(hostId);
+      hostId = nextHostId;
+      if (!hostId.empty()) Hosts()[hostId] = get_weak();
+    }
     updating = false;
+    SyncPortals();
     // LayoutUpdated will deliver the new geometry after XAML has arranged.
     lastLayout = L"";
     root.InvalidateArrange();
   }
 };
+static void RegisterPortal(Portal &portal, hstring const &hostId, hstring const &slot) {
+  if (portal.hostId == hostId && portal.slot == slot) return;
+  if (!portal.hostId.empty()) {
+    auto &list = Portals()[std::wstring(portal.hostId)];
+    list.erase(std::remove_if(list.begin(), list.end(), [&](auto const &weak) {
+      auto other = weak.get();
+      return !other || other.get() == &portal;
+    }), list.end());
+    portal.Detach();
+  }
+  portal.hostId = hostId;
+  portal.slot = slot;
+  if (hostId.empty()) return;
+  Portals()[std::wstring(hostId)].push_back(portal.get_weak());
+  auto found = Hosts().find(std::wstring(hostId));
+  if (found != Hosts().end())
+    if (auto host = found->second.get()) host->SyncPortals();
+}
 }
 
 void RegisterDesktopNavigation(winrt::Microsoft::ReactNative::IReactPackageBuilder const &packageBuilder) {
@@ -428,6 +606,34 @@ void RegisterDesktopNavigation(winrt::Microsoft::ReactNative::IReactPackageBuild
   using namespace Microsoft::ReactNative;
   using namespace Microsoft::ReactNative::Composition;
   using namespace DesktopNavigation;
+  packageBuilder.as<IReactPackageBuilderFabric>().AddViewComponent(L"DesktopNavigationPortal", [](IReactViewComponentBuilder const &builder) {
+    builder.SetCreateProps([](ViewProps props, IComponentProps const &previous) { return make<PortalProps>(props, previous); });
+    builder.as<IReactCompositionViewComponentBuilder>().SetPortalComponentViewInitializer([](PortalComponentView const &view) {
+      auto portal = make_self<Portal>();
+      portal->view = view;
+      view.UserData(*portal);
+      // Create the React Native island up front: nested navigators mounted inside this portal need it as the
+      // parent of their own XAML island before the portal is attached to a XAML element.
+      view.Destroying([](IInspectable const &sender, IInspectable const &) {
+        auto portal = sender.as<PortalComponentView>().UserData().as<Portal>();
+        RegisterPortal(*portal, L"", L"");
+        portal->Close();
+      });
+    });
+    builder.SetUpdatePropsHandler([](winrt::Microsoft::ReactNative::ComponentView const &view, IComponentProps const &props, IComponentProps const &) {
+      auto next = props.as<PortalProps>();
+      RegisterPortal(*view.UserData().as<Portal>(), next->hostId, next->slot);
+    });
+    builder.SetUpdateStateHandler([](winrt::Microsoft::ReactNative::ComponentView const &view, IComponentState const &state) {
+      auto portal = view.UserData().as<Portal>();
+      portal->state = state;
+      if (portal->width >= 0) {
+        auto w = portal->width, h = portal->height;
+        portal->width = -1;
+        portal->Constrain(w, h);
+      }
+    });
+  });
   packageBuilder.as<IReactPackageBuilderFabric>().AddViewComponent(L"DesktopNavigationHost", [](IReactViewComponentBuilder const &builder) {
     // Host::Initialize creates XamlIsland/WinUI controls. RNW only creates its XamlApplication (which calls
     // WindowsXamlManager::InitializeForCurrentThread) when a registered component opts in; without it the
