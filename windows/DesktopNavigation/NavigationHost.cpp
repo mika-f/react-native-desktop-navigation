@@ -121,12 +121,24 @@ struct Host : implements<Host, IInspectable> {
     return value;
   }
 
+  // RNW renders in physical pixels under a root visual scaled by 1/RasterizationScale, but lays out the
+  // island's ChildSiteLink in DIPs without compensating, so the island is drawn shrunk on scaled displays.
+  // The placement visual (this component's own visual) scales DIPs back to physical pixels.
+  Microsoft::UI::Composition::ContainerVisual placement{nullptr};
+  Microsoft::UI::Composition::Visual CreateVisual(Microsoft::UI::Composition::Compositor const &compositor) {
+    placement = compositor.CreateSpriteVisual();
+    return placement;
+  }
   void Initialize(ContentIslandComponentView const &view) {
     root = Grid();
     island = XamlIsland();
     island.Content(root);
     view.Connect(island.ContentIsland());
     layoutToken = root.LayoutUpdated([this](auto const &, auto const &) { ReportLayout(); });
+    view.LayoutMetricsChanged([this](auto const &, LayoutMetricsChangedArgs const &args) { UpdateScale(args.NewLayoutMetrics()); });
+  }
+  void UpdateScale(LayoutMetrics const &metrics) {
+    if (placement) placement.Scale({metrics.PointScaleFactor, metrics.PointScaleFactor, 1});
   }
   void Close() {
     updating = true;
@@ -422,8 +434,14 @@ void RegisterDesktopNavigation(winrt::Microsoft::ReactNative::IReactPackageBuild
     // first XAML object throws RPC_E_WRONG_THREAD and the app fail-fasts on mount.
     builder.XamlSupport(true);
     builder.SetCreateProps([](ViewProps props, IComponentProps const &previous) { return make<HostProps>(props, previous); });
-    builder.as<IReactCompositionViewComponentBuilder>().SetContentIslandComponentViewInitializer([](ContentIslandComponentView const &view) {
-      auto host = make_self<Host>(); host->Initialize(view); view.UserData(*host);
+    auto compositionBuilder = builder.as<IReactCompositionViewComponentBuilder>();
+    compositionBuilder.SetCreateVisualHandler([](winrt::Microsoft::ReactNative::ComponentView const &view) {
+      if (!view.UserData()) view.UserData(make<Host>());
+      return view.UserData().as<Host>()->CreateVisual(view.as<winrt::Microsoft::ReactNative::Composition::ComponentView>().Compositor());
+    });
+    compositionBuilder.SetContentIslandComponentViewInitializer([](ContentIslandComponentView const &view) {
+      if (!view.UserData()) view.UserData(make<Host>());
+      view.UserData().as<Host>()->Initialize(view);
       view.Destroying([](IInspectable const &sender, IInspectable const &) { sender.as<ContentIslandComponentView>().UserData().as<Host>()->Close(); });
     });
     builder.SetUpdatePropsHandler([](winrt::Microsoft::ReactNative::ComponentView const &view, IComponentProps const &props, IComponentProps const &) {
