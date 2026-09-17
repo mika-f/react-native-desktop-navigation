@@ -417,15 +417,19 @@ void RegisterDesktopNavigation(winrt::Microsoft::ReactNative::IReactPackageBuild
   using namespace Microsoft::ReactNative::Composition;
   using namespace DesktopNavigation;
   packageBuilder.as<IReactPackageBuilderFabric>().AddViewComponent(L"DesktopNavigationHost", [](IReactViewComponentBuilder const &builder) {
+    // Host::Initialize creates XamlIsland/WinUI controls. RNW only creates its XamlApplication (which calls
+    // WindowsXamlManager::InitializeForCurrentThread) when a registered component opts in; without it the
+    // first XAML object throws RPC_E_WRONG_THREAD and the app fail-fasts on mount.
+    builder.XamlSupport(true);
     builder.SetCreateProps([](ViewProps props, IComponentProps const &previous) { return make<HostProps>(props, previous); });
     builder.as<IReactCompositionViewComponentBuilder>().SetContentIslandComponentViewInitializer([](ContentIslandComponentView const &view) {
       auto host = make_self<Host>(); host->Initialize(view); view.UserData(*host);
       view.Destroying([](IInspectable const &sender, IInspectable const &) { sender.as<ContentIslandComponentView>().UserData().as<Host>()->Close(); });
     });
-    builder.SetUpdatePropsHandler([](ComponentView const &view, IComponentProps const &props, IComponentProps const &) {
+    builder.SetUpdatePropsHandler([](winrt::Microsoft::ReactNative::ComponentView const &view, IComponentProps const &props, IComponentProps const &) {
       view.UserData().as<Host>()->Apply(props.as<HostProps>()->configuration);
     });
-    builder.SetUpdateEventEmitterHandler([](ComponentView const &view, EventEmitter const &emitter) {
+    builder.SetUpdateEventEmitterHandler([](winrt::Microsoft::ReactNative::ComponentView const &view, EventEmitter const &emitter) {
       auto host = view.UserData().as<Host>(); host->emitter = emitter; host->lastLayout = L"";
     });
   });
