@@ -10,6 +10,7 @@ import { splitColumnConfig, type SplitNavigationState } from '../routers';
 import { NavigatorStateContext, useNavigator } from '../core/builder';
 import { Scene } from '../core/Scene';
 import { SplitColumnContext, useNavigationTheme } from '../core/context';
+import { hiddenStyle } from '../core/hidden';
 import { consumeKey, DesktopView, eventHandled } from '../platform';
 export interface SplitColumnProps {
   id: string;
@@ -284,7 +285,7 @@ export function createSplitNavigator() {
                             : 0,
                         flexShrink: 0,
                       },
-                      !visible && { display: 'none' },
+                      !visible && hiddenStyle,
                     ]}
                   >
                     <SplitColumnContext.Provider

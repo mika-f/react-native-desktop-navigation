@@ -16,6 +16,7 @@ import {
 } from './context';
 import { createNavigation } from './navigation';
 import { FocusContext, type FocusRegistry, type FocusTarget } from './focus';
+import { hiddenStyle } from './hidden';
 import type { CommonScreenOptions, StackAnimation } from './types';
 export interface SceneProps {
   nodeId: string;
@@ -144,7 +145,7 @@ export function Scene({
               overlay && styles.overlay,
               overlay === 'dialog' && styles.dialogBackdrop,
               overlay && overlayStyle,
-              !visible && styles.hidden,
+              !visible && hiddenStyle,
             ]}
           >
             <Animated.View
@@ -171,7 +172,6 @@ export function Scene({
 const styles = StyleSheet.create({
   scene: { flex: 1 },
   content: { flex: 1 },
-  hidden: { display: 'none' },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.25)',

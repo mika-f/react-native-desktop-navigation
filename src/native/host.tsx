@@ -11,6 +11,7 @@ import {
 import NativeHost from './specs/DesktopNavigationHostNativeComponent';
 import type { ResolvedNativeIcon } from './icons';
 import { useNavigationTheme } from '../core/context';
+import { hiddenStyle } from '../core/hidden';
 
 export interface NativeAppearance {
   /**
@@ -300,7 +301,7 @@ export function NativeSurface({
                   width: frame.width,
                   height: frame.height,
                 },
-                !visible && styles.hidden,
+                !visible && hiddenStyle,
               ]}
             >
               {typeof slot.content === 'function'
@@ -403,5 +404,4 @@ const styles = StyleSheet.create({
   container: { flex: 1, overflow: 'hidden' },
   slot: { position: 'absolute', overflow: 'hidden' },
   footer: { position: 'absolute' },
-  hidden: { display: 'none' },
 });

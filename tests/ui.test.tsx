@@ -368,8 +368,8 @@ it('resizes Split by mouse drag and retains mounted state when columns hide and 
     StyleSheet.flatten(
       native('View').find((n) => n.props.testID === 'split-column-sidebar')!
         .props.style,
-    ).display,
-  ).toBe('none');
+    ),
+  ).toMatchObject({ position: 'absolute', opacity: 0 });
   act(() =>
     split().props.onLayout({
       nativeEvent: { layout: { width: 1000, height: 800 } },
@@ -647,8 +647,8 @@ it('customizes Stack header parts, scene visibility, and themed dialog surfaces'
   expect(
     StyleSheet.flatten(
       native('View').find((n) => n.props.testID === 'scene-Home')!.props.style,
-    ).display,
-  ).toBe('none');
+    ),
+  ).toMatchObject({ position: 'absolute', opacity: 0 });
 });
 
 it.each(['sidebar', 'tabs'] as const)(
