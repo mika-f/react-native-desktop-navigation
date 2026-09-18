@@ -40,8 +40,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run build && npm run check:native-codegen",
-    "prepack": "npm run build",
+    "check": "pnpm run typecheck && pnpm test && pnpm run build && pnpm run check:native-codegen",
+    "prepack": "pnpm run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:native-codegen": "node scripts/check-native-codegen.js",
@@ -52,6 +52,7 @@
     "react-native": ">=0.78"
   },
   "devDependencies": {
+    "@react-native/codegen": "0.81.0",
     "@types/react": "^19.0.0",
     "@types/react-test-renderer": "^19.0.0",
     "lucide-react-native": "^1.46.0",
