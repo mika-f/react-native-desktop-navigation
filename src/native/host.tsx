@@ -269,6 +269,15 @@ export function NativeSurface({
   const layout = measurement?.event;
   const footerFrame = layout?.footerFrame;
   const footerPlaced = !!footerFrame && footerFrame.width > 0;
+  // Windows stack/sidebar hosts every scene in one shared XAML element and
+  // reports only the active key. Native attaches a newly selected scene's
+  // portal before the layout for the new revision arrives, so size it (and
+  // hidden scenes) from that shared frame instead of its natural size, which
+  // would flash a shrunken scene.
+  const frames = layout?.frames ?? {};
+  const sharedFrames = Object.values(frames);
+  const sharedFrame =
+    portals && sharedFrames.length === 1 ? sharedFrames[0] : undefined;
   return (
     <View style={[styles.container, style]} onLayout={onLayout}>
       <NativeHost
@@ -294,7 +303,7 @@ export function NativeSurface({
       />
       <View pointerEvents="box-none" style={StyleSheet.absoluteFillObject}>
         {slots.map((slot) => {
-          const frame = layout?.frames[slot.key];
+          const frame = frames[slot.key] ?? sharedFrame;
           const visible =
             slot.visible && !!frame && frame.width > 0 && frame.height > 0;
           const content =
