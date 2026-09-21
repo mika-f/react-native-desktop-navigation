@@ -324,9 +324,14 @@ export function NativeSurface({
                   importantForAccessibility={
                     visible ? 'auto' : 'no-hide-descendants'
                   }
+                  // A portal lays its content out as a separate root, so before
+                  // native reports a frame the content would be laid out at its
+                  // natural size. Yoga keeps the flex basis it computes then for
+                  // `flex: 1` children, which would pin a scene to that height
+                  // for good. Keep the root at a definite (empty) size instead.
                   style={[
                     styles.portalContent,
-                    frame && { width: frame.width, height: frame.height },
+                    { width: frame?.width ?? 0, height: frame?.height ?? 0 },
                   ]}
                 >
                   {content}
