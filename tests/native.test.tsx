@@ -919,6 +919,15 @@ it('hosts Windows scenes, React icons and the footer in portals sized from nativ
     portal(`content:${b}`).findByProps({ testID: 'scene-b' }),
   ).toBeTruthy();
   expect(portal('footer').findByProps({ testID: 'footer' })).toBeTruthy();
+  // Before native reports a frame, scene content is laid out at a definite
+  // empty size rather than its natural size, which Yoga would keep as the flex
+  // basis of `flex: 1` scenes.
+  expect(
+    StyleSheet.flatten(
+      (portal(`content:${a}`).children[0] as ReturnType<typeof host>).props
+        .style,
+    ),
+  ).toMatchObject({ width: 0, height: 0 });
   event({
     type: 'layout',
     frames: { [a]: { x: 240, y: 0, width: 500, height: 700 } },
