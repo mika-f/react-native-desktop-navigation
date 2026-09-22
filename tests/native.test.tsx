@@ -566,7 +566,7 @@ it('rejects invalid native icon descriptors before passing them to native contro
 });
 
 it.each(['macos'])(
-  'renders Lucide JSX in native sidebar slots on %s, preserving clipping, context and selection',
+  'renders Lucide JSX in native sidebar row portals on %s, preserving context and selection',
   (os) => {
     Platform.OS = os;
     const Sidebar = createSidebarNavigator<{
@@ -641,20 +641,22 @@ it.each(['macos'])(
     expect(first.items[0].icon).toEqual({ type: 'react', size: 20 });
     expect(host().props.configuration).not.toContain('ContextIcon');
     const [a, b, system] = first.items.map((i: { key: string }) => i.key);
-    const geometry = {
-      [a]: {
-        frame: { x: 12, y: -5, width: 20, height: 20 },
-        clip: { x: 12, y: 0, width: 20, height: 15 },
-      },
-      [b]: {
-        frame: { x: 12, y: 25, width: 20, height: 20 },
-        clip: { x: 12, y: 25, width: 20, height: 20 },
-      },
-    };
     const svgs = () => renderer!.root.findAll((n) => String(n.type) === 'Svg');
-    expect(svgs()).toHaveLength(0);
-    event({ type: 'layout', frames: {}, iconFrames: geometry });
+    const portals = () =>
+      renderer!.root.findAll(
+        (node) => String(node.type) === 'DesktopNavigationPortal',
+      );
+    // Icons are mounted into their native rows immediately: native scrolls and
+    // clips them with the List, so no layout event is awaited.
     expect(svgs()).toHaveLength(2);
+    expect(portals().map((n) => n.props.slot)).toEqual([
+      `icon:${a}`,
+      `icon:${b}`,
+    ]);
+    expect(portals().every((n) => n.props.hostId === first.hostId)).toBe(true);
+    expect(first.hostId).toEqual(expect.any(String));
+    expect(first.colorScheme).toBeUndefined();
+    expect(portals()[0].props).toMatchObject({ pointerEvents: 'none' });
     expect(svgs()[0].props).toMatchObject({
       width: 20,
       height: 20,
@@ -662,20 +664,12 @@ it.each(['macos'])(
       strokeWidth: 1.5,
     });
     expect(svgs()[0].findAll((n) => String(n.type) === 'Path')).toHaveLength(2);
-    const wrapper = renderer!.root
-      .findAllByType(View)
-      .find((n) => n.props.style?.top === -5)!;
-    expect(wrapper.props.style).toMatchObject({
-      top: -5,
+    const wrapper = portals()[0].children[0] as ReturnType<typeof host>;
+    expect(StyleSheet.flatten(wrapper.props.style)).toMatchObject({
       width: 20,
       height: 20,
     });
-    const clip = wrapper.parent!;
-    expect(clip.props.pointerEvents).toBe('none');
-    const overlay = renderer!.root
-      .findAllByType(View)
-      .find((n) => n.props.accessible === false)!;
-    expect(overlay.props).toMatchObject({
+    expect(wrapper.props).toMatchObject({
       pointerEvents: 'none',
       accessibilityElementsHidden: true,
       importantForAccessibility: 'no-hide-descendants',
@@ -685,153 +679,63 @@ it.each(['macos'])(
     expect(svgs()).toEqual(initialSvgs);
     expect(svgs()[0].props.stroke).toBe('#888888');
     expect(svgs()[1].props.stroke).toBe('#c4a0ff');
-    event({
-      type: 'layout',
-      frames: {},
-      iconFrames: {},
-      revision: first.revision,
-    });
-    expect(svgs()).toEqual(initialSvgs); // Stale reports cannot clear retained icons.
-    event({ type: 'layout', frames: {}, iconFrames: geometry });
-    event({ type: 'select', key: b }); // Acknowledging a no-op also retains icons.
+    // Layout reports (e.g. while scrolling) never remount or hide icons.
+    event({ type: 'layout', frames: {} });
     event({ type: 'select', key: a });
     expect(svgs()).toEqual(initialSvgs);
     expect(svgs()[0].props.stroke).toBe('#c4a0ff');
     for (const key of [system, b, system, a]) {
-      const previousRevision = configuration().revision;
       event({ type: 'select', key });
       expect(configuration().activeKey).toBe(key);
       expect(configuration().items[2].icon).toMatchObject({
-        ...(os === 'macos'
-          ? { name: key === system ? 'house.fill' : 'house' }
-          : { glyph: key === system ? '\uE80F' : '\uE8A5' }),
+        name: key === system ? 'house.fill' : 'house',
         color: key === system ? '#c4a0ff' : '#888888',
       });
       expect(svgs()).toEqual(initialSvgs);
       expect(svgs()[0].props.stroke).toBe(key === a ? '#c4a0ff' : '#888888');
       expect(svgs()[1].props.stroke).toBe(key === b ? '#c4a0ff' : '#888888');
-      event({
-        type: 'layout',
-        frames: {},
-        iconFrames: {},
-        revision: previousRevision,
-      });
-      expect(svgs()).toEqual(initialSvgs);
-      event({ type: 'layout', frames: {}, iconFrames: geometry });
-      expect(svgs()).toEqual(initialSvgs);
     }
     expect(mounted).toHaveBeenCalledTimes(2);
     expect(unmounted).not.toHaveBeenCalled();
-    event({ type: 'layout', frames: {}, iconFrames: {} });
-    expect(svgs()).toHaveLength(0);
-    event({ type: 'layout', frames: {}, iconFrames: geometry });
     act(() => remove());
     expect(svgs()).toHaveLength(0);
+    expect(portals()).toHaveLength(0);
     expect(configuration().items[0].icon).toBeUndefined();
   },
 );
 
-it.each([
-  'icon-size',
-  'native-icon-size',
-  'icon-kind',
-  'icon-removal',
-  'hidden-row',
-  'title',
-  'badge',
-  'pane-width',
-  'footer',
-  'collapse',
-  'reorder',
-])(
-  'invalidates React icon geometry after %s changes, including a revert',
-  (change) => {
-    const original: NativeConfiguration = {
-      mode: 'sidebar',
-      activeKey: 'a',
-      items: [
-        { key: 'a', title: 'a', icon: { type: 'react', size: 20 } },
-        {
-          key: 'b',
-          title: 'b',
-          icon: { type: 'symbol', name: 'house', size: 20 },
-        },
-      ],
-    };
-    const changed: NativeConfiguration = {
-      ...original,
-      items: original.items.map((item) => ({ ...item })),
-    };
-    switch (change) {
-      case 'icon-size':
-        changed.items[0].icon = { type: 'react', size: 32 };
-        break;
-      case 'native-icon-size':
-        changed.items[1].icon = { type: 'symbol', name: 'house', size: 32 };
-        break;
-      case 'icon-kind':
-        changed.items[0].icon = { type: 'symbol', name: 'house', size: 20 };
-        break;
-      case 'icon-removal':
-        changed.items[1].icon = undefined;
-        break;
-      case 'hidden-row':
-        changed.items[1].hidden = true;
-        break;
-      case 'title':
-        changed.items[0].title = 'Updated title';
-        break;
-      case 'badge':
-        changed.items[0].badge = '99';
-        break;
-      case 'pane-width':
-        changed.paneWidth = 300;
-        break;
-      case 'footer':
-        changed.footerHeight = 60;
-        break;
-      case 'collapse':
-        changed.collapsed = true;
-        break;
-      case 'reorder':
-        changed.items.reverse();
-        break;
-    }
-    const tree = (config: NativeConfiguration) => (
-      <NavigationContainer>
-        <NativeSurface
-          configuration={config}
-          slots={[]}
-          icons={[{ key: 'a', content: <House size={20} /> }]}
-          onRequest={() => {}}
-        />
-      </NavigationContainer>
-    );
-    render(tree(original));
-    const rect = { x: 12, y: 10, width: 20, height: 20 };
-    const measured = {
-      type: 'layout',
-      frames: {},
-      iconFrames: { a: { frame: rect, clip: rect } },
-    };
-    const svgs = () => renderer!.root.findAll((n) => String(n.type) === 'Svg');
-    event(measured);
-    expect(svgs()).toHaveLength(1);
-    const previousRevision = configuration().revision;
-    act(() => renderer!.update(tree(changed)));
-    expect(svgs()).toHaveLength(0);
-    event({ ...measured, revision: previousRevision });
-    expect(svgs()).toHaveLength(0);
-    // Returning to the same configuration must not resurrect old measurements.
-    act(() => renderer!.update(tree(original)));
-    expect(svgs()).toHaveLength(0);
-    event(measured);
-    expect(svgs()).toHaveLength(1);
-    const icon = svgs()[0];
-    act(() => renderer!.update(tree({ ...original, activeKey: 'b' })));
-    expect(svgs()[0]).toBe(icon);
-  },
-);
+it('sizes macOS React icon portals from the configured icon slot', () => {
+  const tree = (size: number) => (
+    <NavigationContainer>
+      <NativeSurface
+        configuration={{
+          mode: 'sidebar',
+          activeKey: 'a',
+          items: [{ key: 'a', title: 'a', icon: { type: 'react', size } }],
+        }}
+        slots={[]}
+        icons={[{ key: 'a', content: <House size={size} /> }]}
+        onRequest={() => {}}
+      />
+    </NavigationContainer>
+  );
+  render(tree(20));
+  const wrapper = () =>
+    renderer!.root.find(
+      (node) => String(node.type) === 'DesktopNavigationPortal',
+    ).children[0] as ReturnType<typeof host>;
+  const icon = renderer!.root.find((n) => String(n.type) === 'Svg');
+  expect(StyleSheet.flatten(wrapper().props.style)).toMatchObject({
+    width: 20,
+    height: 20,
+  });
+  act(() => renderer!.update(tree(32)));
+  expect(StyleSheet.flatten(wrapper().props.style)).toMatchObject({
+    width: 32,
+    height: 32,
+  });
+  expect(renderer!.root.find((n) => String(n.type) === 'Svg')).toBe(icon);
+});
 
 it('supports direct JSX and rejects invalid React slot dimensions and icon geometry', () => {
   const state = { focused: true, disabled: false };

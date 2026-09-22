@@ -10,7 +10,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import NativeHost from './specs/DesktopNavigationHostNativeComponent';
-import NativePortal from './windows/DesktopNavigationPortalNativeComponent';
+import NativePortal from './specs/DesktopNavigationPortalNativeComponent';
 import type { ResolvedNativeIcon } from './icons';
 import { useNavigationTheme } from '../core/context';
 import { hiddenStyle } from '../core/hidden';
@@ -212,38 +212,20 @@ export function NativeSurface({
         'Native navigation appearance requires #RRGGBB or #RRGGBBAA colors.',
       );
   }
-  // Windows hosts React content inside the XAML island through portals, which
-  // find their host by this id.
+  // Windows hosts all React content inside the XAML island through portals;
+  // macOS hosts sidebar icons in their AppKit rows the same way. Portals find
+  // their host by this id.
   const portals = Platform.OS === 'windows';
   const hostId = React.useId();
   const colorScheme = useColorScheme();
-  if (portals)
-    configuration = {
-      ...configuration,
-      hostId,
-      colorScheme: colorScheme ?? undefined,
-    } as NativeConfiguration;
+  configuration = {
+    ...configuration,
+    hostId,
+    ...(portals && { colorScheme: colorScheme ?? undefined }),
+  } as NativeConfiguration;
   const [acknowledgement, acknowledge] = React.useReducer((n) => n + 1, 0);
   const serialized = JSON.stringify(configuration);
-  // Selection and acknowledgements do not invalidate sidebar icon positions.
-  // Other configuration changes may move/resize rows, so await fresh geometry.
-  const iconLayoutConfiguration = JSON.stringify({
-    ...configuration,
-    activeKey: undefined,
-    items: configuration.items.map((item) => ({
-      ...item,
-      // Native icons occupy fixed square slots. Switching a symbol/glyph,
-      // image or tint on selection changes its contents, not row geometry.
-      icon: item.icon && { type: item.icon.type, size: item.icon.size },
-    })),
-  });
-  const version = React.useRef({
-    serialized,
-    acknowledgement,
-    revision: 0,
-    iconLayoutConfiguration,
-    iconLayoutRevision: 0,
-  });
+  const version = React.useRef({ serialized, acknowledgement, revision: 0 });
   if (
     version.current.serialized !== serialized ||
     version.current.acknowledgement !== acknowledgement
@@ -252,21 +234,10 @@ export function NativeSurface({
       serialized,
       acknowledgement,
       revision: version.current.revision + 1,
-      iconLayoutConfiguration,
-      iconLayoutRevision:
-        version.current.iconLayoutRevision +
-        Number(
-          version.current.iconLayoutConfiguration !== iconLayoutConfiguration,
-        ),
     };
   }
   const revision = version.current.revision;
-  const iconLayoutRevision = version.current.iconLayoutRevision;
-  const [measurement, setMeasurement] = React.useState<{
-    event: LayoutEvent;
-    iconLayoutRevision: number;
-  } | null>(null);
-  const layout = measurement?.event;
+  const [layout, setLayout] = React.useState<LayoutEvent | null>(null);
   const footerFrame = layout?.footerFrame;
   const footerPlaced = !!footerFrame && footerFrame.width > 0;
   // Windows stack/sidebar hosts every scene in one shared XAML element and
@@ -288,10 +259,10 @@ export function NativeSurface({
           if (!message || message.revision !== revision) return;
           if (message.type === 'layout') {
             onMeasurements?.(message.frames);
-            setMeasurement((previous) =>
-              JSON.stringify(previous?.event) === JSON.stringify(message)
+            setLayout((previous) =>
+              JSON.stringify(previous) === JSON.stringify(message)
                 ? previous
-                : { event: message, iconLayoutRevision },
+                : message,
             );
           } else {
             onRequest(message);
@@ -378,31 +349,42 @@ export function NativeSurface({
           </View>
         </NativePortal>
       )}
-      {portals &&
-        icons.map((icon) => {
-          const frame = layout?.iconFrames?.[icon.key]?.frame;
-          return (
-            <NativePortal
-              key={icon.key}
-              hostId={hostId}
-              slot={`icon:${icon.key}`}
+      {icons.map((icon) => {
+        // Windows sizes icons from the reported element; macOS rows use the
+        // configured square slot, so icons never wait for a layout event.
+        const size = configuration.items.find((i) => i.key === icon.key)?.icon
+          ?.size;
+        const frame = portals
+          ? layout?.iconFrames?.[icon.key]?.frame
+          : size !== undefined
+            ? { width: size, height: size }
+            : undefined;
+        return (
+          <NativePortal
+            key={icon.key}
+            hostId={hostId}
+            slot={`icon:${icon.key}`}
+            {...(!portals && {
+              pointerEvents: 'none' as const,
+              style: styles.iconPortal,
+            })}
+          >
+            <View
+              collapsable={false}
+              pointerEvents="none"
+              accessible={false}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={[
+                styles.portalIcon,
+                frame && { width: frame.width, height: frame.height },
+              ]}
             >
-              <View
-                collapsable={false}
-                pointerEvents="none"
-                accessible={false}
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-                style={[
-                  styles.portalIcon,
-                  frame && { width: frame.width, height: frame.height },
-                ]}
-              >
-                {icon.content}
-              </View>
-            </NativePortal>
-          );
-        })}
+              {icon.content}
+            </View>
+          </NativePortal>
+        );
+      })}
       {!portals && footer != null && footer !== false && (
         // Measured at its natural height so native can reserve exactly that
         // much space; kept invisible until native reports the reserved frame.
@@ -435,61 +417,6 @@ export function NativeSurface({
           {footer}
         </View>
       )}
-      <View
-        pointerEvents="none"
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        style={StyleSheet.absoluteFillObject}
-      >
-        {!portals &&
-          icons.map((icon) => {
-            // Keep SVGs mounted across selection-only revisions, but never reuse
-            // positions after a layout configuration change (even if reverted).
-            const geometry =
-              measurement?.iconLayoutRevision === iconLayoutRevision
-                ? layout?.iconFrames?.[icon.key]
-                : undefined;
-            if (
-              !geometry ||
-              geometry.clip.width <= 0 ||
-              geometry.clip.height <= 0
-            )
-              return null;
-            const { frame, clip } = geometry;
-            return (
-              <View
-                key={icon.key}
-                collapsable={false}
-                pointerEvents="none"
-                style={[
-                  styles.slot,
-                  {
-                    left: clip.x,
-                    top: clip.y,
-                    width: clip.width,
-                    height: clip.height,
-                  },
-                ]}
-              >
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: 'absolute',
-                    left: frame.x - clip.x,
-                    top: frame.y - clip.y,
-                    width: frame.width,
-                    height: frame.height,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {icon.content}
-                </View>
-              </View>
-            );
-          })}
-      </View>
     </View>
   );
 }
@@ -498,5 +425,7 @@ const styles = StyleSheet.create({
   slot: { position: 'absolute', overflow: 'hidden' },
   portalContent: { overflow: 'hidden' },
   portalIcon: { alignItems: 'center', justifyContent: 'center' },
+  // Only the portal's children are shown (inside the native row).
+  iconPortal: { position: 'absolute' },
   footer: { position: 'absolute' },
 });

@@ -12,7 +12,7 @@ Pod::Spec.new do |s|
   s.swift_version = '5.0'
   s.source_files = 'macos/**/*.{h,mm,swift}'
   # Keep React's C++ Fabric headers out of the Swift underlying module.
-  s.private_header_files = 'macos/DDNNavigationComponentView.h'
+  s.private_header_files = ['macos/DDNNavigationComponentView.h', 'macos/DDNPortalComponentView.h']
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'SWIFT_OBJC_INTERFACE_HEADER_NAME' => 'DesktopNavigation-Swift.h' }
   install_modules_dependencies(s)
 end

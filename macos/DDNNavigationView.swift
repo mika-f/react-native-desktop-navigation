@@ -85,6 +85,7 @@ private struct Configuration: Decodable {
   var paneWidth: Double?
   var footerHeight: Double?
   var columns: [Column]?
+  var hostId: String?
 }
 // Not a valid route key: route keys never start with a NUL character.
 private let footerSlotKey = "\u{0}footer"
@@ -116,19 +117,15 @@ private final class NavigationModel: ObservableObject {
           let payload = String(data: data, encoding: .utf8) else { return }
     emit?(payload)
   }
-  weak var host: NSView?
   // Weak anchors avoid retaining a removed SwiftUI row or its hosting subtree.
   let iconAnchors = NSMapTable<NSString, IconAnchorView>(keyOptions: .strongMemory, valueOptions: .weakMemory)
-  private var scheduled = false
   private var lastLayout = ""
-  func scheduleReport() {
-    guard !scheduled else { return }
-    scheduled = true
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      self.scheduled = false
-      self.report(self.frames)
-    }
+  func iconContent(_ key: String) -> NSView? {
+    guard let hostId = configuration.hostId else { return nil }
+    return portalContents[portalKey(hostId, "icon:\(key)")]?.view
+  }
+  func attachIcons() {
+    for case let anchor as IconAnchorView in iconAnchors.objectEnumerator()?.allObjects ?? [] { anchor.attachContent() }
   }
   func report(_ values: [String: CGRect]) {
     frames = values
@@ -138,18 +135,8 @@ private final class NavigationModel: ObservableObject {
     }
     var slots = values
     let footer = slots.removeValue(forKey: footerSlotKey)
-    var icons: [String: Any] = [:]
-    if configuration.mode == "sidebar", configuration.collapsed != true, let host {
-      for item in configuration.items where item.hidden != true && item.icon?.type == "react" {
-        guard let anchor = iconAnchors.object(forKey: item.key as NSString),
-              anchor.window != nil, anchor.isDescendant(of: host), !anchor.isHiddenOrHasHiddenAncestor else { continue }
-        let frame = anchor.convert(anchor.bounds, to: host)
-        let clip = anchor.convert(anchor.visibleRect, to: host).intersection(viewport).intersection(frame)
-        icons[item.key] = ["frame": rect(frame), "clip": rect(clip)]
-      }
-    }
     var message: [String: Any] = ["type": "layout", "revision": configuration.revision,
-      "frames": slots.mapValues { rect($0.intersection(viewport)) }, "iconFrames": icons]
+      "frames": slots.mapValues { rect($0.intersection(viewport)) }]
     if configuration.mode == "sidebar", configuration.collapsed != true,
        (configuration.footerHeight ?? 0) > 0, let footer {
       let visible = footer.intersection(viewport)
@@ -161,16 +148,30 @@ private final class NavigationModel: ObservableObject {
     emit?(payload)
   }
 }
-// Measuring the actual AppKit view's visibleRect includes the List's scroll
-// viewport. A partially scrolled icon is clipped, never resized to fit.
+private final class WeakView {
+  weak var view: NSView?
+  init(_ view: NSView) { self.view = view }
+}
+// React icon contents registered by DesktopNavigationPortal views, keyed by host
+// id and slot. Main thread only.
+private var portalContents: [String: WeakView] = [:]
+private let navigationHosts = NSHashTable<DDNNavigationView>.weakObjects()
+private func portalKey(_ hostId: String, _ slot: String) -> String { "\(hostId)\u{0}\(slot)" }
+
+// React icons are reparented into their row's AppKit view, so they scroll and
+// clip with the List synchronously instead of following a JS layout round trip.
 private final class IconAnchorView: NSView {
   weak var model: NavigationModel?
   var key = ""
   override var isFlipped: Bool { true }
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
-  override func layout() { super.layout(); model?.scheduleReport() }
-  override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); model?.scheduleReport() }
-  override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); model?.scheduleReport() }
+  func attachContent() {
+    guard let content = model?.iconContent(key) else { return }
+    if content.superview !== self { addSubview(content) }
+    content.frame = bounds
+    content.autoresizingMask = [.width, .height]
+  }
+  override func layout() { super.layout(); attachContent() }
 }
 private struct ReactIconAnchor: NSViewRepresentable {
   let key: String
@@ -180,15 +181,14 @@ private struct ReactIconAnchor: NSViewRepresentable {
     view.key = key
     view.model = model
     model.iconAnchors.setObject(view, forKey: key as NSString)
-    model.scheduleReport()
+    view.attachContent()
   }
   static func dismantleNSView(_ view: IconAnchorView, coordinator: ()) {
     if view.model?.iconAnchors.object(forKey: view.key as NSString) === view {
       view.model?.iconAnchors.removeObject(forKey: view.key as NSString)
-      view.model?.scheduleReport()
     }
+    view.subviews.forEach { $0.removeFromSuperview() }
   }
-
 }
 private struct FramePreference: PreferenceKey {
   static var defaultValue: [String: CGRect] { [:] }
@@ -359,7 +359,6 @@ private struct NavigationRoot: View {
 public final class DDNNavigationView: NSView {
   private let model = NavigationModel()
   private var hosting: NSHostingView<NavigationRoot>!
-  private var geometryObservers: [NSObjectProtocol] = []
   @objc public var onEvent: ((String) -> Void)? {
     didSet { model.emit = onEvent }
   }
@@ -375,17 +374,8 @@ public final class DDNNavigationView: NSView {
     hosting.safeAreaRegions = []
     hosting.sizingOptions = []
     addSubview(hosting)
-    model.host = self
-    // NSClipView sends bounds changes while scrolling, even without a SwiftUI
-    // layout pass. Observe descendants only, and coalesce reports per run loop.
-    for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
-      geometryObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-        guard let self, let view = notification.object as? NSView, view.isDescendant(of: self) else { return }
-        self.model.scheduleReport()
-      })
-    }
+    navigationHosts.add(self)
   }
-  deinit { geometryObservers.forEach(NotificationCenter.default.removeObserver) }
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
   public override func layout() {
     super.layout()
@@ -398,6 +388,20 @@ public final class DDNNavigationView: NSView {
     model.viewport = bounds
     guard let data = json.data(using: .utf8),
           let value = try? JSONDecoder().decode(Configuration.self, from: data) else { return }
+    let hostChanged = model.configuration.hostId != value.hostId
     model.configuration = value
+    if hostChanged { model.attachIcons() }
+  }
+  /// Registers (or with a nil host id, removes) React content for a native slot.
+  @objc public static func setPortalContent(_ content: NSView, hostId: String?, slot: String?) {
+    portalContents = portalContents.filter { $0.value.view != nil && $0.value.view !== content }
+    guard let hostId, let slot, !hostId.isEmpty, !slot.isEmpty else {
+      content.removeFromSuperview()
+      return
+    }
+    portalContents[portalKey(hostId, slot)] = WeakView(content)
+    for host in navigationHosts.allObjects where host.model.configuration.hostId == hostId {
+      host.model.attachIcons()
+    }
   }
 }

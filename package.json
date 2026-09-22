@@ -78,7 +78,8 @@
     "jsSrcsDir": "src/native/specs",
     "ios": {
       "componentProvider": {
-        "DesktopNavigationHost": "DDNNavigationComponentView"
+        "DesktopNavigationHost": "DDNNavigationComponentView",
+        "DesktopNavigationPortal": "DDNPortalComponentView"
       }
     }
   }

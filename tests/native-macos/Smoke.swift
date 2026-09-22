@@ -53,7 +53,7 @@ struct Smoke {
       while Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
     }
     var sidebar: [String: Any] = ["mode": "sidebar", "activeKey": "row0", "revision": 5,
-      "paneWidth": 240, "items": (0..<50).map { index -> [String: Any] in
+      "paneWidth": 240, "hostId": "smoke", "items": (0..<50).map { index -> [String: Any] in
         ["key": "row\(index)", "title": "Row \(index)", "icon": ["type": "react", "size": 24]]
       }]
     func applySidebar() {
@@ -61,43 +61,45 @@ struct Smoke {
       view.setConfiguration(String(data: try! JSONSerialization.data(withJSONObject: sidebar), encoding: .utf8)!)
       pump()
     }
-    func iconFrames() -> [String: [String: [String: Double]]] {
-      guard let result = layouts.last?["iconFrames"] as? [String: [String: [String: Double]]] else { fatalError("Missing icon geometry") }
-      return result
-    }
     func descendants(_ parent: NSView) -> [NSView] {
       parent.subviews.flatMap { [$0] + descendants($0) }
     }
+    // Stand-ins for DesktopNavigationPortal content views (React icons).
+    let icons = (0..<50).map { _ in NSView() }
+    for (index, icon) in icons.enumerated() {
+      DDNNavigationView.setPortalContent(icon, hostId: "smoke", slot: "icon:row\(index)")
+    }
     applySidebar()
-    let initial = iconFrames()
-    guard let first = initial["row0"], let frame = first["frame"], let clip = first["clip"] else { fatalError("Missing first React icon: \(initial)") }
-    precondition(frame["width"] == 24 && frame["height"] == 24 && clip["height"]! > 0, "React icon needs its full native slot: \(first)")
+    precondition(layouts.allSatisfy { $0["iconFrames"] == nil }, "macOS must not report React icon geometry to JS")
+    let first = icons[0]
+    precondition(first.window === window && first.isDescendant(of: view), "React icon must be hosted in its native row")
+    precondition(first.frame.size == NSSize(width: 24, height: 24), "React icon needs its full native slot: \(first.frame)")
     let scrollers = descendants(view).compactMap { $0 as? NSScrollView }
     guard let scroller = scrollers.first(where: { ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height + 100 }) else { fatalError("Missing scrollable native sidebar") }
+    precondition(first.isDescendant(of: scroller.contentView), "React icon must scroll with the List")
+    let before = first.convert(first.bounds, to: view)
     scroller.contentView.scroll(to: NSPoint(x: 0, y: 150))
     scroller.reflectScrolledClipView(scroller.contentView)
+    // No run loop turn: the icon moves in the same pass as the List.
+    let after = first.convert(first.bounds, to: view)
+    precondition(abs(before.minY - after.minY - 150) < 0.5, "React icon must move synchronously with scrolling: \(before) -> \(after)")
     pump()
-    let scrolled = iconFrames()
-    precondition(scrolled["row0"] == nil || scrolled["row0"]?["clip"]?["height"] == 0, "Scrolled-out React icon must be hidden: \(scrolled["row0"] as Any)")
-    precondition(scrolled.values.contains { ($0["clip"]?["height"] ?? 0) > 0 }, "Scrolling must expose other icons")
-    for value in scrolled.values {
-      let frame = value["frame"]!, clip = value["clip"]!
-      precondition(frame["width"] == 24 && frame["height"] == 24, "Scrolling must not resize SVGs")
-      precondition(clip["height"]! <= 24 && clip["width"]! <= 24, "Clip must fit its icon")
-    }
+    precondition(first.frame.size == NSSize(width: 24, height: 24), "Scrolling must not resize SVGs")
     sidebar["revision"] = 6
     sidebar["collapsed"] = true
     applySidebar()
-    precondition(iconFrames().isEmpty, "Collapsed macOS sidebar must hide React icons")
+    precondition(icons.allSatisfy { $0.window == nil || $0.isHiddenOrHasHiddenAncestor || $0.visibleRect.isEmpty }, "Collapsed macOS sidebar must hide React icons")
     sidebar["revision"] = 7
     sidebar["collapsed"] = false
     applySidebar()
-    precondition(!iconFrames().isEmpty, "Expanded sidebar must restore React icon anchors")
+    precondition(icons.contains { $0.window === window && !$0.visibleRect.isEmpty }, "Expanded sidebar must restore React icons")
     sidebar["revision"] = 8
     sidebar["items"] = [["key": "row0", "title": "Plain"]]
     applySidebar()
-    precondition(iconFrames().isEmpty, "Removed icons must not retain stale anchors")
-    print("Native React icon slots passed: scrolling, clipping, collapse/expand, removal")
+    precondition(first.window == nil, "Removed icons must not stay in the sidebar")
+    DDNNavigationView.setPortalContent(icons[1], hostId: nil, slot: nil)
+    precondition(icons[1].superview == nil, "Unregistered portal content must be detached")
+    print("Native React icon portals passed: scrolling, collapse/expand, removal")
     func footerFrame() -> [String: Double]? { layouts.last?["footerFrame"] as? [String: Double] }
     sidebar["revision"] = 9
     sidebar["footerHeight"] = 64
@@ -118,7 +120,7 @@ struct Smoke {
     precondition(footerFrame() == nil, "Removed footer must not report a frame")
     print("Native sidebar footer slot passed: reservation, collapse, removal")
     // A selected SF Symbol changes its contents, but must not move or drop
-    // the neighboring React overlay, even in intermediate layout reports.
+    // the neighboring React icon.
     func mixedItems(_ selected: Bool) -> [[String: Any]] {
       [
         ["key": "svg", "title": "SVG", "icon": ["type": "react", "size": 24]],
@@ -126,20 +128,20 @@ struct Smoke {
         ["key": "plain", "title": "Plain"]
       ]
     }
-    sidebar = ["mode": "sidebar", "activeKey": "svg", "revision": 12,
+    let svg = NSView()
+    DDNNavigationView.setPortalContent(svg, hostId: "smoke", slot: "icon:svg")
+    sidebar = ["mode": "sidebar", "activeKey": "svg", "revision": 12, "hostId": "smoke",
       "paneWidth": 240, "items": mixedItems(false)]
     applySidebar()
-    guard let svgGeometry = iconFrames()["svg"], svgGeometry["clip"]!["height"]! > 0 else { fatalError("Missing mixed sidebar SVG geometry") }
+    guard svg.window === window else { fatalError("Missing mixed sidebar SVG") }
+    let svgFrame = svg.convert(svg.bounds, to: view)
     for (index, key) in ["symbol", "svg", "plain", "symbol", "svg"].enumerated() {
       sidebar["revision"] = 13 + index
       sidebar["activeKey"] = key
       sidebar["items"] = mixedItems(key == "symbol")
       applySidebar()
       precondition(!layouts.isEmpty, "Selection must report its new revision")
-      for layout in layouts {
-        let icons = layout["iconFrames"] as? [String: [String: [String: Double]]]
-        precondition(icons?["svg"] == svgGeometry, "Mixed selection must preserve SVG geometry: \(layout)")
-      }
+      precondition(svg.window === window && svg.convert(svg.bounds, to: view) == svgFrame, "Mixed selection must preserve the SVG slot")
     }
     print("Native mixed sidebar selection passed: SVG, SF Symbols and plain rows")
     // Measure the fixed stack viewport across restore/push/pop/replace and

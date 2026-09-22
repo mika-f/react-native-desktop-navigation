@@ -37,6 +37,13 @@ try {
         .includes('DesktopNavigationHost')
     )
       throw new Error(`Missing host in ${name}`);
+    if (
+      name !== 'EventEmitters.h' &&
+      !fs
+        .readFileSync(path.join(temporary, name), 'utf8')
+        .includes('DesktopNavigationPortal')
+    )
+      throw new Error(`Missing portal in ${name}`);
   }
   const pkg = require('../package.json');
   const platforms = require('../react-native.config').dependency.platforms;
@@ -55,13 +62,13 @@ try {
     [{ config: pkg.codegenConfig, libraryPath: path.resolve(__dirname, '..') }],
     temporary,
   );
+  const provider = fs.readFileSync(
+    path.join(temporary, 'RCTThirdPartyComponentsProvider.mm'),
+    'utf8',
+  );
   if (
-    !fs
-      .readFileSync(
-        path.join(temporary, 'RCTThirdPartyComponentsProvider.mm'),
-        'utf8',
-      )
-      .includes('DDNNavigationComponentView')
+    !provider.includes('DDNNavigationComponentView') ||
+    !provider.includes('DDNPortalComponentView')
   )
     throw new Error('Missing macOS Fabric component provider.');
   console.log('DesktopNavigation Fabric Codegen passed.');
