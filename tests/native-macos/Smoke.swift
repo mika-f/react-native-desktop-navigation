@@ -20,8 +20,8 @@ struct Smoke {
     for x in 0..<16 { for y in 0..<16 { bitmap.setColor(NSColor(deviceRed: 0, green: 0.3, blue: 1, alpha: 1), atX: x, y: y) } }
     try! bitmap.representation(using: .png, properties: [:])!.write(to: iconURL)
     let cases = [
-      #"{"mode":"stack","items":[{"key":"home","title":"Home"}],"activeKey":"home","revision":1}"#,
-      #"{"mode":"stack","items":[{"key":"home","title":"Home"},{"key":"detail","title":"Detail"}],"activeKey":"detail","revision":2,"canGoBack":true}"#,
+      #"{"mode":"stack","items":[{"key":"home","title":"Home"}],"activeKey":"home","revision":1,"headerShown":false}"#,
+      #"{"mode":"stack","items":[{"key":"home","title":"Home"},{"key":"detail","title":"Detail"}],"activeKey":"detail","revision":2,"canGoBack":true,"headerShown":true}"#,
       ##"{"mode":"sidebar","items":[{"key":"home","title":"Home","icon":{"type":"symbol","name":"house","size":18,"color":"#9966ff"}},{"key":"detail","title":"Detail","icon":{"type":"image","uri":"\##(iconURL.absoluteString)","size":16,"template":true}}],"activeKey":"home","revision":3,"paneWidth":240}"##,
       #"{"mode":"split","items":[],"activeKey":"a","revision":4,"columns":[{"key":"a","width":240,"minWidth":100},{"key":"b","width":400,"minWidth":100},{"key":"c","width":300,"minWidth":100}]}"#
     ]
@@ -35,6 +35,15 @@ struct Smoke {
       for (key, value) in frames {
         guard let rect = value as? [String: Double], let x = rect["x"], let y = rect["y"], let width = rect["width"], let height = rect["height"] else { fatalError("Invalid frame") }
         precondition(x >= 0 && y >= 0 && width > 0 && height > 0 && x + width <= 1000.5 && y + height <= 600.5, "Invalid viewport for \(key): \(rect)")
+      }
+      if let data = config.data(using: .utf8),
+         let configuration = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         configuration["mode"] as? String == "stack" {
+        let activeKey = configuration["activeKey"] as! String
+        precondition(Set(frames.keys) == [activeKey], "Stack must report only its active content slot: \(frames)")
+        guard let active = frames[activeKey] as? [String: Double] else { fatalError("Missing active stack frame: \(frames)") }
+        precondition(abs(active["x"]!) < 0.5 && abs(active["width"]! - view.bounds.width) < 0.5,
+          "Active stack scene must fill the content width: \(active)")
       }
       print("Native layout passed: revision \(last["revision"]!), slots \(frames.keys.sorted())")
     }
@@ -133,6 +142,41 @@ struct Smoke {
       }
     }
     print("Native mixed sidebar selection passed: SVG, SF Symbols and plain rows")
+    // Measure the fixed stack viewport across restore/push/pop/replace and
+    // header changes, including repeated visits to the same route key.
+    let stackCases: [(keys: [String], header: Bool)] = [
+      (["home", "settings"], true),
+      (["home", "settings", "detail"], true),
+      (["home", "settings"], true),
+      (["home", "replacement"], true),
+      (["home"], false),
+      (["home", "settings"], true),
+      (["home", "settings"], false),
+      (["home"], false)
+    ]
+    for (index, test) in stackCases.enumerated() {
+      let revision = 20 + index
+      let activeKey = test.keys.last!
+      let config: [String: Any] = [
+        "mode": "stack", "items": test.keys.map { ["key": $0, "title": $0] },
+        "activeKey": activeKey, "revision": revision,
+        "headerShown": test.header, "canGoBack": test.keys.count > 1
+      ]
+      layouts = []
+      view.setConfiguration(String(data: try! JSONSerialization.data(withJSONObject: config), encoding: .utf8)!)
+      pump()
+      guard let layout = layouts.last, layout["revision"] as? Int == revision,
+            let frames = layout["frames"] as? [String: [String: Double]],
+            let frame = frames[activeKey] else { fatalError("Missing active stack viewport for \(config)") }
+      precondition(Set(frames.keys) == [activeKey], "Only the active stack slot should be measured")
+      precondition(abs(frame["x"]!) < 0.5 && abs(frame["width"]! - view.bounds.width) < 0.5,
+        "Stack viewport must fill the host: \(frame)")
+      precondition(frame["height"]! > 0 && abs(frame["y"]! + frame["height"]! - view.bounds.height) < 0.5,
+        "Stack viewport must extend to the bottom of the host: \(frame)")
+      precondition(test.header ? frame["y"]! > 0 : abs(frame["y"]!) < 0.5,
+        "Stack viewport must reserve exactly the visible header: \(frame)")
+    }
+    print("Native stack viewport passed: restore, push, pop, replace, repeated visits, header visibility")
     print("SwiftUI native layout smoke passed")
   }
 }

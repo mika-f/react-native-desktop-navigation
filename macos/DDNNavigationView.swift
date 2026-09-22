@@ -277,11 +277,16 @@ private struct NavigationRoot: View {
         let count = config.items.count - 1 - path.count
         if count > 0 { model.send(["type": "pop", "count": count]) }
       })) {
-        ContentSlot(id: config.items.first?.key ?? "")
-          .navigationDestination(for: String.self) { key in
-            ContentSlot(id: key).navigationBarBackButtonHidden(true)
+        Color.clear
+          .navigationDestination(for: String.self) { _ in
+            Color.clear.navigationBarBackButtonHidden(true)
           }
       }
+      // Destination geometry can retain NavigationStack's offscreen transition
+      // position even with animations disabled. React scenes need the stable
+      // content viewport, not the moving placeholders inside the native stack.
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(ContentSlot(id: config.activeKey))
     }
   }
   var sidebar: some View {

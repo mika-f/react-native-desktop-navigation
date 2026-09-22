@@ -138,6 +138,8 @@ For a screen that specifies a custom header via `header`, `headerStyle`, `header
 
 At this stage, only card presentation is supported; `presentation` / `animation` / overlay / dialog options are not provided. SwiftUI's own transition animations are also disabled, so the native container and the React Scene don't animate independently. Use the JS version's Stack for any part of the tree that needs these.
 
+On macOS, the active React scene is placed using the fixed content viewport below the native header. Individual SwiftUI destinations are not measured, because their transition coordinates can remain outside the host viewport after a push.
+
 ### Sidebar
 
 `Navigator` accepts `initialRouteName`, `defaultCollapsed`, `width` (a number, 100 or greater), `appearance`, `style`, `screenOptions`, and `renderSidebarFooter`. `Screen` supports `label` / `title`, `icon`, `iconSize`, `badge`, `hidden`, `disabled`, and the common Scene options. Use `Section title="…"` for a heading.
@@ -292,6 +294,9 @@ npm run check:native-macos
 `check:native-macos` requires macOS / Xcode. It compiles the SwiftUI implementation and inspects layout notifications for Stack / Sidebar (including SF Symbols and local-image icons) / 3-column Split inside an AppKit window. The window is never shown on screen.
 
 ### Windows rendering
+Stack checks cover the active viewport after restore, push, pop, replacement, repeated visits, and header visibility changes. Live window resizing should also be verified in a visible host app; the headless SwiftUI host can defer geometry updates after a resize.
+
+This repository does not include an RN native host app. SVG icon rendering on macOS 0.81 / Fabric with `react-native-svg` 15.15.5 has been verified in a user's host app. **Windows C++ builds and on-device behavior are unverified.** As an experimental implementation at this stage, verify the following in your own host app:
 
 A XAML island always composites above its Fabric siblings, so React content cannot be laid over the native controls as on macOS. On Windows each scene, React sidebar icon, and the footer is rendered through a `DesktopNavigationPortal` into its own React Native island, which is hosted inside the XAML element that reserves space for it (the NavigationView content area, an item's icon area, `PaneFooter`, or a Split column). The content stays in the same React tree — Context and state are preserved — while it is drawn, and receives input, inside the native control. Inactive scenes stay mounted in portals that are not attached to any element.
 
